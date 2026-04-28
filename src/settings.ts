@@ -51,7 +51,7 @@ export class KBSettingsTab extends PluginSettingTab {
           .setDynamicTooltip()
           .onChange(async v => {
             this.plugin.settings.updateIntervalMinutes = v;
-            await this.plugin.saveSettings();
+            try { await this.plugin.saveSettings(); } catch (err) { console.error('KB Manager: failed to save settings', err); }
           })
       );
 
@@ -65,7 +65,7 @@ export class KBSettingsTab extends PluginSettingTab {
           .setValue(this.plugin.settings.autoInject)
           .onChange(async v => {
             this.plugin.settings.autoInject = v;
-            await this.plugin.saveSettings();
+            try { await this.plugin.saveSettings(); } catch (err) { console.error('KB Manager: failed to save settings', err); }
           })
       );
   }
@@ -84,7 +84,7 @@ export class KBSettingsTab extends PluginSettingTab {
           .setValue(this.plugin.settings.excludedPaths.join('\n'))
           .onChange(async v => {
             this.plugin.settings.excludedPaths = parseExclusionPatterns(v);
-            await this.plugin.saveSettings();
+            try { await this.plugin.saveSettings(); } catch (err) { console.error('KB Manager: failed to save settings', err); }
           })
       );
   }
@@ -103,8 +103,9 @@ export class KBSettingsTab extends PluginSettingTab {
           .addOption('inline', 'Inline injection')
           .setValue(this.plugin.settings.defaultMocFormat)
           .onChange(async v => {
-            this.plugin.settings.defaultMocFormat = v as 'dedicated' | 'inline';
-            await this.plugin.saveSettings();
+            if (v !== 'dedicated' && v !== 'inline') return;
+            this.plugin.settings.defaultMocFormat = v;
+            try { await this.plugin.saveSettings(); } catch (err) { console.error('KB Manager: failed to save settings', err); }
           })
       );
 
@@ -123,7 +124,7 @@ export class KBSettingsTab extends PluginSettingTab {
           )
           .onChange(async v => {
             this.plugin.settings.folderRules = parseFolderRules(v);
-            await this.plugin.saveSettings();
+            try { await this.plugin.saveSettings(); } catch (err) { console.error('KB Manager: failed to save settings', err); }
           })
       );
   }
