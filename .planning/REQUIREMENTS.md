@@ -31,7 +31,7 @@
 
 - [ ] **MOC-01**: Plugin auto-generates a dedicated `MOC.md` file per folder, containing wikilinks to all notes in that folder
 - [ ] **MOC-02**: Plugin groups MOC entries by tag — notes with matching tags are listed under a heading for that tag
-- [ ] **MOC-03**: Dedicated MOC files are marked `kb-managed: true` in frontmatter; plugin safely overwrites them on rebuild
+- [ ] **MOC-03**: Dedicated MOC files are tagged `kb-managed: true` in frontmatter; plugin safely overwrites them on rebuild
 - [ ] **MOC-04**: Plugin injects an inline MOC section into an existing user note when the user manually inserts delimiter markers
 - [ ] **MOC-05**: Plugin injects an inline MOC section into an existing user note when the user runs an "Insert MOC here" command at cursor position
 - [ ] **MOC-06**: Plugin injects inline MOC sections automatically into all notes in a folder when per-folder config is set to "inline"
@@ -93,28 +93,55 @@
 | Cross-vault operations | Single vault scope |
 | Graph view manipulation | Owned by Obsidian core and dedicated plugins |
 | Dataview-syntax output | Breaks if Dataview removed; use real wikilinks instead |
-| Frontmatter mutation as primary state | Risk of merge conflicts and surprises |
+| Frontmatter mutation as primary store | Risk of merge conflicts and surprises |
 
 ## Traceability
 
-*(Populated during roadmap creation)*
-
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| FOUND-01 through FOUND-05 | — | Pending |
-| INDX-01 through INDX-04 | — | Pending |
-| SCHED-01 through SCHED-04 | — | Pending |
-| MOC-01 through MOC-08 | — | Pending |
-| TOC-01 through TOC-05 | — | Pending |
-| TAG-01 through TAG-03 | — | Pending |
-| SIDE-01 through SIDE-04 | — | Pending |
-| SET-01 through SET-04 | — | Pending |
+| FOUND-01 | Phase 1 — Plugin Scaffold + Settings + File Safety | Pending |
+| FOUND-02 | Phase 1 — Plugin Scaffold + Settings + File Safety | Pending |
+| FOUND-03 | Phase 1 — Plugin Scaffold + Settings + File Safety | Pending |
+| FOUND-04 | Phase 1 — Plugin Scaffold + Settings + File Safety | Pending |
+| FOUND-05 | Phase 1 — Plugin Scaffold + Settings + File Safety | Pending |
+| SET-01 | Phase 1 — Plugin Scaffold + Settings + File Safety | Pending |
+| SET-02 | Phase 1 — Plugin Scaffold + Settings + File Safety | Pending |
+| SET-03 | Phase 1 — Plugin Scaffold + Settings + File Safety | Pending |
+| SET-04 | Phase 1 — Plugin Scaffold + Settings + File Safety | Pending |
+| INDX-01 | Phase 2 — VaultIndex Core Data Layer | Pending |
+| INDX-02 | Phase 2 — VaultIndex Core Data Layer | Pending |
+| INDX-03 | Phase 2 — VaultIndex Core Data Layer | Pending |
+| INDX-04 | Phase 2 — VaultIndex Core Data Layer | Pending |
+| SCHED-01 | Phase 3 — Background Update Scheduler | Pending |
+| SCHED-02 | Phase 3 — Background Update Scheduler | Pending |
+| SCHED-03 | Phase 3 — Background Update Scheduler | Pending |
+| SCHED-04 | Phase 3 — Background Update Scheduler | Pending |
+| MOC-01 | Phase 4 — MOC Generator | Pending |
+| MOC-02 | Phase 4 — MOC Generator | Pending |
+| MOC-03 | Phase 4 — MOC Generator | Pending |
+| MOC-04 | Phase 4 — MOC Generator | Pending |
+| MOC-05 | Phase 4 — MOC Generator | Pending |
+| MOC-06 | Phase 4 — MOC Generator | Pending |
+| MOC-07 | Phase 4 — MOC Generator | Pending |
+| MOC-08 | Phase 4 — MOC Generator | Pending |
+| TOC-01 | Phase 5 — TOC Generator | Pending |
+| TOC-02 | Phase 5 — TOC Generator | Pending |
+| TOC-03 | Phase 5 — TOC Generator | Pending |
+| TOC-04 | Phase 5 — TOC Generator | Pending |
+| TOC-05 | Phase 5 — TOC Generator | Pending |
+| TAG-01 | Phase 6 — TagManager + Tag Hierarchy | Pending |
+| TAG-02 | Phase 6 — TagManager + Tag Hierarchy | Pending |
+| TAG-03 | Phase 6 — TagManager + Tag Hierarchy | Pending |
+| SIDE-01 | Phase 7 — Sidebar View | Pending |
+| SIDE-02 | Phase 7 — Sidebar View | Pending |
+| SIDE-03 | Phase 7 — Sidebar View | Pending |
+| SIDE-04 | Phase 7 — Sidebar View | Pending |
 
 **Coverage:**
 - v1 requirements: 37 total
-- Mapped to phases: 0 (pending roadmap)
-- Unmapped: 37 ⚠️
+- Mapped to phases: 37
+- Unmapped: 0
 
 ---
 *Requirements defined: 2026-04-28*
-*Last updated: 2026-04-28 after initial definition*
+*Last updated: 2026-04-28 after roadmap creation*
