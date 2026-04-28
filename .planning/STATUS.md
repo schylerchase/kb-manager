@@ -63,8 +63,9 @@
 
 ## Session Continuity
 
-**Last session:** 2026-04-28 — Roadmap created, no implementation started
+**Last session:** 2026-04-28 — Phase 1 context gathered; all implementation decisions locked
 **Next action:** Run `/gsd-plan-phase 1` to break Phase 1 into executable plans
+**Resume file:** `.planning/phases/01-plugin-scaffold-settings-file-safety/01-CONTEXT.md`
 
 ---
 *Last updated: 2026-04-28*
