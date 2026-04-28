@@ -27,7 +27,7 @@
 
 **Requirements in scope:** FOUND-01, FOUND-02, FOUND-03, FOUND-04, FOUND-05, SET-01, SET-02, SET-03, SET-04
 
-**Active plan:** Plan 01 complete (pure-logic modules); Plan 02 next (scaffold + build config)
+**Active plan:** Plan 02 complete (scaffold + build config); Plan 03 next (plugin entry: main.ts + settings.ts)
 
 **Blockers:** None
 
@@ -63,9 +63,9 @@
 
 ## Session Continuity
 
-**Last session:** 2026-04-28 — Plan 01-01 executed; pure-logic modules created (exclusions.ts, delimiter.ts, settings-parser.ts)
-**Next action:** Execute Plan 01-02 (scaffold + build config)
-**Resume file:** `.planning/phases/01-plugin-scaffold-settings-file-safety/01-01-SUMMARY.md`
+**Last session:** 2026-04-28 — Plan 01-02 executed; all toolchain config files created (manifest.json, package.json, tsconfig.json, esbuild.config.mjs, vitest.config.ts, etc.)
+**Next action:** Execute Plan 01-03 (plugin entry: src/main.ts + src/settings.ts)
+**Resume file:** `.planning/phases/01-plugin-scaffold-settings-file-safety/01-02-SUMMARY.md`
 
 ---
 *Last updated: 2026-04-28*
