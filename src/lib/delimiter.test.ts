@@ -36,6 +36,13 @@ describe('isWriteSafe', () => {
     const mocContent = '<!-- kb-manager:moc:start -->\ncontent\n<!-- kb-manager:moc:end -->';
     expect(isWriteSafe(mocContent, 'toc')).toBe(false);
   });
+
+  it('returns false when duplicate start delimiters are present', () => {
+    const content =
+      '<!-- kb-manager:moc:start -->\nA\n<!-- kb-manager:moc:end -->\n' +
+      '<!-- kb-manager:moc:start -->\nB\n<!-- kb-manager:moc:end -->';
+    expect(isWriteSafe(content, 'moc')).toBe(false);
+  });
 });
 
 describe('replaceDelimitedSection', () => {
