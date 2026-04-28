@@ -44,8 +44,14 @@
   2. User can open the settings tab and configure update interval, folder exclusions, per-folder MOC format, and global auto-injection toggle — all values persist after Obsidian restart
   3. Plugin never writes outside delimiter-bounded sections in user notes; files matching exclusion patterns are silently skipped on all code paths
   4. A file with absent or malformed `<!-- kb-manager:TYPE:start -->` / `<!-- kb-manager:TYPE:end -->` delimiters is skipped entirely — no partial writes, no guessing
-**Plans:** TBD
+**Plans:** 4 plans
 **UI hint:** yes
+
+Plans:
+- [x] 01-01-PLAN-pure-logic.md — Pure-logic modules: exclusions, delimiter validator, settings parsers (Wave 1) — COMPLETE 2026-04-28
+- [ ] 01-02-PLAN-scaffold-config.md — Toolchain config: manifest.json, package.json, tsconfig, esbuild, vitest (Wave 2, parallel)
+- [ ] 01-03-PLAN-plugin-entry.md — Plugin entry: src/main.ts + src/settings.ts with full settings tab (Wave 2, parallel)
+- [ ] 01-04-PLAN-tests.md — Vitest test suite for all three pure-logic modules (Wave 3)
 
 ### Phase 2: VaultIndex — Core Data Layer
 **Goal:** The plugin builds a complete in-memory index of vault files, folders, tags, and headings on startup — and tracks which files are dirty — so all downstream generators have a single reliable data source.
@@ -105,7 +111,7 @@
 **Depends on:** Phase 6
 **Requirements:** SIDE-01, SIDE-02, SIDE-03, SIDE-04
 **Success Criteria** (what must be TRUE):
-  1. User can open the sidebar panel from a ribbon icon or command and see the current MOC tree (folder → MOC entries) rendered as an expandable list
+  1. User can open the sidebar panel from a ribbon icon or command and see the current MOC tree (folder -> MOC entries) rendered as an expandable list
   2. The sidebar panel also shows the live tag hierarchy alongside the MOC tree, without requiring a separate view or command
   3. After a background rebuild completes, the sidebar panel updates its display automatically — no manual refresh needed
   4. After Obsidian is closed and reopened, the sidebar panel reappears in the same position without user intervention
@@ -118,7 +124,7 @@
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 1. Plugin Scaffold + Settings + File Safety | 0/? | Not started | - |
+| 1. Plugin Scaffold + Settings + File Safety | 1/4 | In progress | - |
 | 2. VaultIndex — Core Data Layer | 0/? | Not started | - |
 | 3. Background Update Scheduler | 0/? | Not started | - |
 | 4. MOC Generator | 0/? | Not started | - |
@@ -174,4 +180,4 @@
 
 ---
 *Roadmap created: 2026-04-28*
-*Last updated: 2026-04-28 after initial creation*
+*Last updated: 2026-04-28 — Phase 1 plans created (4 plans, 3 waves)*
