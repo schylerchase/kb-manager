@@ -1,0 +1,10 @@
+{
+  "id": "kb-manager",
+  "name": "KB Manager",
+  "version": "0.1.0",
+  "minAppVersion": "1.4.0",
+  "description": "Auto-maintains MOC files, TOC sections, and tag hierarchies in your vault.",
+  "author": "Schyler Ryan",
+  "authorUrl": "",
+  "isDesktopOnly": false
+}
