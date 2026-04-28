@@ -16,7 +16,11 @@ export function isWriteSafe(content: string, type: string): boolean {
   const end = buildDelimiter(type, 'end');
   const startIdx = content.indexOf(start);
   const endIdx = content.indexOf(end);
-  return startIdx !== -1 && endIdx !== -1 && endIdx > startIdx;
+  if (startIdx === -1 || endIdx === -1 || endIdx <= startIdx) return false;
+  // Duplicate delimiters = malformed per delimiter contract — reject
+  const hasSecondStart = content.indexOf(start, startIdx + start.length) !== -1;
+  const hasSecondEnd = content.indexOf(end, endIdx + end.length) !== -1;
+  return !hasSecondStart && !hasSecondEnd;
 }
 
 /**
