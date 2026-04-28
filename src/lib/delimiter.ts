@@ -1,9 +1,12 @@
+const VALID_TYPES = ['moc', 'toc'] as const;
+export type DelimiterType = typeof VALID_TYPES[number];
+
 /**
  * Builds a delimiter comment for the given type and position.
  * Format: <!-- kb-manager:TYPE:start --> or <!-- kb-manager:TYPE:end -->
  * D-13: delimiter contract used by all file-writing phases.
  */
-export function buildDelimiter(type: string, position: 'start' | 'end'): string {
+export function buildDelimiter(type: DelimiterType, position: 'start' | 'end'): string {
   return `<!-- kb-manager:${type}:${position} -->`;
 }
 
@@ -11,7 +14,7 @@ export function buildDelimiter(type: string, position: 'start' | 'end'): string 
  * Returns true only when both delimiters are present AND start precedes end.
  * D-14: must be called before any vault.process() write in Phase 4+.
  */
-export function isWriteSafe(content: string, type: string): boolean {
+export function isWriteSafe(content: string, type: DelimiterType): boolean {
   const start = buildDelimiter(type, 'start');
   const end = buildDelimiter(type, 'end');
   const startIdx = content.indexOf(start);
@@ -30,7 +33,7 @@ export function isWriteSafe(content: string, type: string): boolean {
  */
 export function replaceDelimitedSection(
   content: string,
-  type: string,
+  type: DelimiterType,
   newSection: string
 ): string {
   if (!isWriteSafe(content, type)) return content;
