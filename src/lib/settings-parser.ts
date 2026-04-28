@@ -13,8 +13,11 @@ export function parseFolderRules(
     if (!line) continue;
     const match = line.match(/^(.+?)\s*=\s*(dedicated|inline)$/);
     if (!match) continue;
-    const path = match[1].trim();
-    const value = match[2] as 'dedicated' | 'inline';
+    const rawPath = match[1];
+    const rawValue = match[2];
+    if (!rawPath || !rawValue) continue;
+    const path = rawPath.trim();
+    const value = rawValue as 'dedicated' | 'inline';
     if (path) result[path] = value;
   }
   return result;
