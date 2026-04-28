@@ -1,7 +1,7 @@
 # Project Status: KB Manager
 
-**Current Phase:** Phase 1 — Plugin Scaffold + Settings + File Safety
-**Overall Progress:** 0/7 phases complete
+**Current Phase:** Phase 2 — VaultIndex — Core Data Layer (Phase 1 complete)
+**Overall Progress:** 1/7 phases complete
 
 ---
 
@@ -9,7 +9,7 @@
 
 | # | Phase | Status | Started | Completed |
 |---|-------|--------|---------|-----------|
-| 1 | Plugin Scaffold + Settings + File Safety | In progress | 2026-04-28 | - |
+| 1 | Plugin Scaffold + Settings + File Safety | Complete | 2026-04-28 | 2026-04-28 |
 | 2 | VaultIndex — Core Data Layer | Not started | - | - |
 | 3 | Background Update Scheduler | Not started | - | - |
 | 4 | MOC Generator | Not started | - | - |
@@ -21,13 +21,13 @@
 
 ## Current Phase Detail
 
-**Phase 1: Plugin Scaffold + Settings + File Safety**
+**Phase 1: Plugin Scaffold + Settings + File Safety — COMPLETE**
 
-**Goal:** The plugin loads cleanly in Obsidian, settings persist across restarts, and write-safety contracts (delimiter pattern + exclusion rules) are enforced before any file-writing feature ships.
+**Goal:** The plugin loads cleanly in Obsidian, settings persist across restarts, and write-safety contracts (delimiter pattern + exclusion rules) are enforced before any file-writing phase ships.
 
-**Requirements in scope:** FOUND-01, FOUND-02, FOUND-03, FOUND-04, FOUND-05, SET-01, SET-02, SET-03, SET-04
+**Requirements completed:** FOUND-01, FOUND-02, FOUND-03, FOUND-04, FOUND-05, SET-01, SET-02, SET-03, SET-04
 
-**Active plan:** Plan 03 complete (plugin entry: main.ts + settings.ts); Plan 04 next (Vitest test suite)
+**All 4 plans complete.** Next: Phase 2 — VaultIndex.
 
 **Blockers:** None
 
@@ -63,9 +63,9 @@
 
 ## Session Continuity
 
-**Last session:** 2026-04-28 — Plan 01-03 executed; src/main.ts and src/settings.ts created; npm run build exits 0 and produces main.js; one deviation fix in src/lib/settings-parser.ts (noUncheckedIndexedAccess guard)
-**Next action:** Execute Plan 01-04 (Vitest test suite for pure-logic modules)
-**Resume file:** `.planning/phases/01-plugin-scaffold-settings-file-safety/01-03-SUMMARY.md`
+**Last session:** 2026-04-28 — Plan 01-04 executed; 3 test files created; 36 Vitest tests pass; npm test exits 0; Phase 1 complete
+**Next action:** Execute Phase 2 (VaultIndex — Core Data Layer)
+**Resume file:** `.planning/phases/01-plugin-scaffold-settings-file-safety/01-04-SUMMARY.md`
 
 ---
 *Last updated: 2026-04-28*

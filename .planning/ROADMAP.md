@@ -23,7 +23,7 @@
 
 ## Phases
 
-- [ ] **Phase 1: Plugin Scaffold + Settings + File Safety** — Plugin loads, settings persist, write-safety contracts enforced
+- [x] **Phase 1: Plugin Scaffold + Settings + File Safety** — Plugin loads, settings persist, write-safety contracts enforced — COMPLETE 2026-04-28
 - [ ] **Phase 2: VaultIndex — Core Data Layer** — In-memory vault index built from MetadataCache; all generators unblocked
 - [ ] **Phase 3: Background Update Scheduler** — Periodic background rebuilds with mutex; manual rebuild command works
 - [ ] **Phase 4: MOC Generator** — Dedicated MOC files and inline MOC sections generated and maintained
@@ -51,7 +51,7 @@ Plans:
 - [x] 01-01-PLAN-pure-logic.md — Pure-logic modules: exclusions, delimiter validator, settings parsers (Wave 1) — COMPLETE 2026-04-28
 - [x] 01-02-PLAN-scaffold-config.md — Toolchain config: manifest.json, package.json, tsconfig, esbuild, vitest (Wave 2, parallel) — COMPLETE 2026-04-28
 - [x] 01-03-PLAN-plugin-entry.md — Plugin entry: src/main.ts + src/settings.ts with full settings tab (Wave 2, parallel) — COMPLETE 2026-04-28
-- [ ] 01-04-PLAN-tests.md — Vitest test suite for all three pure-logic modules (Wave 3)
+- [x] 01-04-PLAN-tests.md — Vitest test suite for all three pure-logic modules (Wave 3) — COMPLETE 2026-04-28
 
 ### Phase 2: VaultIndex — Core Data Layer
 **Goal:** The plugin builds a complete in-memory index of vault files, folders, tags, and headings on startup — and tracks which files are dirty — so all downstream generators have a single reliable data source.
@@ -124,7 +124,7 @@ Plans:
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 1. Plugin Scaffold + Settings + File Safety | 3/4 | In progress | - |
+| 1. Plugin Scaffold + Settings + File Safety | 4/4 | Complete | 2026-04-28 |
 | 2. VaultIndex — Core Data Layer | 0/? | Not started | - |
 | 3. Background Update Scheduler | 0/? | Not started | - |
 | 4. MOC Generator | 0/? | Not started | - |
@@ -180,4 +180,4 @@ Plans:
 
 ---
 *Roadmap created: 2026-04-28*
-*Last updated: 2026-04-28 — Plan 01-03 complete; plugin entry point established, npm run build succeeds*
+*Last updated: 2026-04-28 — Plan 01-04 complete; Phase 1 complete: 36 Vitest tests pass, all pure-logic modules verified*
