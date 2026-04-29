@@ -25,11 +25,11 @@
 
 - [x] **Phase 1: Plugin Scaffold + Settings + File Safety** — Plugin loads, settings persist, write-safety contracts enforced — COMPLETE 2026-04-28
 - [x] **Phase 2: VaultIndex — Core Data Layer** — In-memory vault index built from MetadataCache; all generators unblocked — COMPLETE 2026-04-29
-- [ ] **Phase 3: Background Update Scheduler** — Periodic background rebuilds with mutex; manual rebuild command works
-- [ ] **Phase 4: MOC Generator** — Dedicated MOC files and inline MOC sections generated and maintained
-- [ ] **Phase 5: TOC Generator** — Per-note TOC and section-level TOC generated and maintained
-- [ ] **Phase 6: TagManager + Tag Hierarchy** — Tag hierarchy built in memory; cross-reference queries work
-- [ ] **Phase 7: Sidebar View** — Persistent sidebar panel shows live MOC tree and tag hierarchy
+- [x] **Phase 3: Background Update Scheduler** — Periodic background rebuilds with mutex; manual rebuild command works — COMPLETE 2026-04-29
+- [x] **Phase 4: MOC Generator** — Dedicated MOC files and inline MOC sections generated and maintained — COMPLETE 2026-04-29
+- [x] **Phase 5: TOC Generator** — Per-note TOC and section-level TOC generated and maintained — COMPLETE 2026-04-29
+- [x] **Phase 6: TagManager + Tag Hierarchy** — Tag hierarchy built in memory; cross-reference queries work — COMPLETE 2026-04-29
+- [x] **Phase 7: Sidebar View** — Persistent sidebar panel shows live MOC tree and tag hierarchy — COMPLETE 2026-04-29
 
 ---
 
@@ -65,9 +65,9 @@ Plans:
 
 Plans:
 - [x] 02-01-PLAN-types-and-tag-utils.md — Pure-logic types + tag/folder utilities: vault-index-types.ts, tag-utils.ts (Wave 1) — COMPLETE 2026-04-29
-- [ ] 02-02-PLAN-vault-index-class.md — VaultIndex class: Obsidian-coupled, full query API, rebuild/rebuildDirty (Wave 2)
-- [ ] 02-03-PLAN-main-integration.md — main.ts wiring: index lifecycle, vault event handlers (Wave 3)
-- [ ] 02-04-PLAN-tests.md — Vitest tests for tag-utils pure-logic functions (Wave 2, parallel with 02-02)
+- [x] 02-02-PLAN-vault-index-class.md — VaultIndex class: Obsidian-coupled, full query API, rebuild/rebuildDirty (Wave 2) — COMPLETE 2026-04-29
+- [x] 02-03-PLAN-main-integration.md — main.ts wiring: index lifecycle, vault event handlers (Wave 3) — COMPLETE 2026-04-29
+- [x] 02-04-PLAN-tests.md — Vitest tests for tag-utils pure-logic functions (Wave 2, parallel with 02-02) — COMPLETE 2026-04-29
 
 ### Phase 3: Background Update Scheduler
 **Goal:** The plugin runs periodic background rebuilds at a user-configured interval without ever running two rebuilds concurrently, and exposes a manual rebuild command that respects the same mutex.
@@ -77,7 +77,11 @@ Plans:
   1. Background rebuilds run on the configured interval (default 5 minutes) without blocking the Obsidian UI — the editor remains responsive during a rebuild
   2. Triggering a manual rebuild via ribbon command while a background rebuild is in progress does not start a second concurrent rebuild; the in-progress rebuild completes first
   3. Vault events (file change, create, delete) are registered only after `onLayoutReady` fires — no event burst on startup
-**Plans:** TBD
+**Plans:** 2 plans
+
+Plans:
+- [x] 03-01-PLAN-scheduler-mutex.md — Scheduler, promise mutex, status bar, and onLayoutReady ordering (Wave 1) — COMPLETE 2026-04-29
+- [x] 03-02-PLAN-ribbon-command-settings.md — Manual rebuild ribbon/command and interval restart wiring (Wave 2) — COMPLETE 2026-04-29
 
 ### Phase 4: MOC Generator
 **Goal:** The plugin generates a dedicated MOC.md file per folder and can inject inline MOC sections into user notes, with entries grouped by tag, using only standard wikilinks.
@@ -89,7 +93,13 @@ Plans:
   3. A user note with `<!-- kb-manager:moc:start -->` / `<!-- kb-manager:moc:end -->` delimiters has the MOC section replaced between those markers on each rebuild; content outside the delimiters is untouched
   4. User can run an "Insert MOC here" command at cursor position in any note to insert delimiter markers and immediately populate an inline MOC section
   5. Per-folder MOC format (dedicated file vs inline injection) is respected: folders set to "inline" inject into all notes in that folder; folders set to "dedicated" (default) use MOC.md
-**Plans:** TBD
+**Plans:** 4 plans
+
+Plans:
+- [x] 04-01-PLAN-pure-logic-moc-builder.md — Pure-logic MOC markdown builder (Wave 1) — COMPLETE 2026-04-29
+- [x] 04-02-PLAN-moc-generator-class.md — Obsidian-coupled MOC generator class (Wave 2) — COMPLETE 2026-04-29
+- [x] 04-03-PLAN-main-integration.md — Plugin integration and Insert MOC command (Wave 3) — COMPLETE 2026-04-29
+- [x] 04-04-PLAN-tests.md — MOC builder and generator tests (Wave 4) — COMPLETE 2026-04-29
 
 ### Phase 5: TOC Generator
 **Goal:** The plugin injects and maintains a per-note TOC from headings and a section-level index note listing all notes and their headings within a folder, using the same delimiter-based write pattern as MOC.
@@ -100,7 +110,13 @@ Plans:
   2. User can run an "Insert TOC here" command at cursor position to insert delimiter markers and immediately populate a TOC section
   3. TOC links use Obsidian heading anchor format `[[note#heading]]` and are navigable from within Obsidian
   4. Notes with no headings are skipped entirely — no empty TOC section is inserted or left behind; notes in excluded folders are also skipped
-**Plans:** TBD
+**Plans:** 4 plans
+
+Plans:
+- [x] 05-01-PLAN-pure-logic-toc-builder.md — Pure-logic TOC markdown builder (Wave 1) — COMPLETE 2026-04-29
+- [x] 05-02-PLAN-toc-generator-class.md — Obsidian-coupled TOC generator class (Wave 2) — COMPLETE 2026-04-29
+- [x] 05-03-PLAN-main-integration.md — Plugin integration and Insert TOC command (Wave 3) — COMPLETE 2026-04-29
+- [x] 05-04-PLAN-tests.md — TOC builder and generator tests (Wave 4) — COMPLETE 2026-04-29
 
 ### Phase 6: TagManager + Tag Hierarchy
 **Goal:** The plugin builds a navigable tag hierarchy in memory from the vault index, supports cross-reference queries for notes sharing a tag cluster, and feeds this data into MOC section groupings.
@@ -110,7 +126,11 @@ Plans:
   1. The tag hierarchy reflects all `#parent/child` relationships in the vault with correct nesting — adding or removing a tag in a note is reflected after the next rebuild
   2. User can query a specific tag (or tag cluster) and retrieve all notes that carry 2 or more of the same tags in that cluster
   3. MOC sections that group notes by tag (MOC-02) draw their groupings from the TagManager hierarchy — the two data structures are consistent
-**Plans:** TBD
+**Plans:** 2 plans
+
+Plans:
+- [x] 06-01-PLAN-tag-cluster-and-manager.md — Tag cluster query logic and TagManager (Wave 1) — COMPLETE 2026-04-29
+- [x] 06-02-PLAN-tests.md — TagManager tests (Wave 2) — COMPLETE 2026-04-29
 
 ### Phase 7: Sidebar View
 **Goal:** A persistent Obsidian ItemView sidebar panel shows the live MOC tree and tag hierarchy side by side, refreshes automatically after each rebuild, and re-registers itself correctly after Obsidian restart.
@@ -121,7 +141,13 @@ Plans:
   2. The sidebar panel also shows the live tag hierarchy alongside the MOC tree, without requiring a separate view or command
   3. After a background rebuild completes, the sidebar panel updates its display automatically — no manual refresh needed
   4. After Obsidian is closed and reopened, the sidebar panel reappears in the same position without user intervention
-**Plans:** TBD
+**Plans:** 4 plans
+
+Plans:
+- [x] 07-01-PLAN-pure-logic-sidebar-data.md — Pure-logic sidebar tree data builders (Wave 1) — COMPLETE 2026-04-29
+- [x] 07-02-PLAN-sidebar-view-class.md — Obsidian ItemView sidebar class (Wave 2) — COMPLETE 2026-04-29
+- [x] 07-03-PLAN-main-integration.md — View registration, commands, and rebuild refresh wiring (Wave 3) — COMPLETE 2026-04-29
+- [x] 07-04-PLAN-tests.md — Sidebar data and integration tests (Wave 4) — COMPLETE 2026-04-29
 **UI hint:** yes
 
 ---
@@ -132,11 +158,11 @@ Plans:
 |-------|----------------|--------|-----------|
 | 1. Plugin Scaffold + Settings + File Safety | 4/4 | Complete | 2026-04-28 |
 | 2. VaultIndex — Core Data Layer | 4/4 | Complete | 2026-04-29 |
-| 3. Background Update Scheduler | 0/? | Not started | - |
-| 4. MOC Generator | 0/? | Not started | - |
-| 5. TOC Generator | 0/? | Not started | - |
-| 6. TagManager + Tag Hierarchy | 0/? | Not started | - |
-| 7. Sidebar View | 0/? | Not started | - |
+| 3. Background Update Scheduler | 2/2 | Complete | 2026-04-29 |
+| 4. MOC Generator | 4/4 | Complete | 2026-04-29 |
+| 5. TOC Generator | 4/4 | Complete | 2026-04-29 |
+| 6. TagManager + Tag Hierarchy | 2/2 | Complete | 2026-04-29 |
+| 7. Sidebar View | 4/4 | Complete | 2026-04-29 |
 
 ---
 
@@ -186,4 +212,4 @@ Plans:
 
 ---
 *Roadmap created: 2026-04-28*
-*Last updated: 2026-04-29 — Phase 2 plans created: 4 plans across 3 waves*
+*Last updated: 2026-04-29 — v1 implementation complete; all 7 phases implemented*

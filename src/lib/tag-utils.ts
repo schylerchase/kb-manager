@@ -25,12 +25,11 @@ export function buildTagTree(
     for (const tag of tags) {
       const segments = tag.split('/');
       let current = root;
-      for (let i = 0; i < segments.length; i++) {
-        const seg = segments[i];
-        if (!current.has(seg)) {
-          current.set(seg, { files: [], children: new Map() });
+      for (const [i, segment] of segments.entries()) {
+        if (!current.has(segment)) {
+          current.set(segment, { files: [], children: new Map() });
         }
-        const node = current.get(seg)!;
+        const node = current.get(segment)!;
         if (i === segments.length - 1) {
           node.files.push(filePath);
         }

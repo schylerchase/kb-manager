@@ -19,7 +19,7 @@ export default class VaultIndex {
   private dirty = new Set<string>();
 
   /** D-11: single callback fired after every rebuild() and rebuildDirty(). */
-  onRebuildComplete: (() => void) | null = null;
+  onRebuildComplete: (() => void | Promise<void>) | null = null;
 
   constructor(private app: App, private excludedPaths: string[]) {}
 
@@ -54,7 +54,7 @@ export default class VaultIndex {
       this._indexFile(file);
     }
     this._rebuildDerivedMaps();
-    this.onRebuildComplete?.();
+    await this.onRebuildComplete?.();
   }
 
   /**
@@ -76,7 +76,7 @@ export default class VaultIndex {
       }
     }
     this._rebuildDerivedMaps();
-    this.onRebuildComplete?.();
+    await this.onRebuildComplete?.();
   }
 
   // --- Query API (D-10) ---

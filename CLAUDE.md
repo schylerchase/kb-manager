@@ -23,7 +23,7 @@ This project uses the GSD (Get Shit Done) planning framework.
 - `/gsd-execute-phase N` — execute the plan
 - `/gsd-verify-work` — verify phase deliverables
 
-**Current phase:** Phase 1 — Plugin Scaffold + Settings + File Safety
+**Current phase:** v1 implementation complete
 
 ## Critical Obsidian Plugin Rules
 

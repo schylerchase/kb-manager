@@ -20,6 +20,7 @@ export const DEFAULT_SETTINGS: KBManagerSettings = {
 type SettingsHost = {
   settings: KBManagerSettings;
   saveSettings(): Promise<void>;
+  restartScheduler(): void;
 };
 
 export class KBSettingsTab extends PluginSettingTab {
@@ -51,7 +52,12 @@ export class KBSettingsTab extends PluginSettingTab {
           .setDynamicTooltip()
           .onChange(async v => {
             this.plugin.settings.updateIntervalMinutes = v;
-            try { await this.plugin.saveSettings(); } catch (err) { console.error('KB Manager: failed to save settings', err); }
+            try {
+              await this.plugin.saveSettings();
+              this.plugin.restartScheduler();
+            } catch (err) {
+              console.error('KB Manager: failed to save settings', err);
+            }
           })
       );
 
