@@ -1,11 +1,15 @@
-import { Plugin } from 'obsidian';
+import { Plugin, TFile } from 'obsidian';
 import { KBManagerSettings, DEFAULT_SETTINGS, KBSettingsTab } from 'settings';
+import VaultIndex from './VaultIndex';
 
 export default class KBManagerPlugin extends Plugin {
   settings!: KBManagerSettings;
+  index!: VaultIndex;
 
   async onload(): Promise<void> {
     await this.loadSettings();
+
+    this.index = new VaultIndex(this.app, this.settings.excludedPaths);
 
     // Register settings tab immediately — safe to do in onload
     this.addSettingTab(new KBSettingsTab(this.app, this));
@@ -14,6 +18,9 @@ export default class KBManagerPlugin extends Plugin {
     // at load time; registering events early causes startup event bursts.
     this.app.workspace.onLayoutReady(() => {
       this.registerVaultEvents();
+      this.index.rebuild().catch(err => {
+        console.error('KB Manager: initial rebuild failed', err);
+      });
     });
   }
 
@@ -33,7 +40,26 @@ export default class KBManagerPlugin extends Plugin {
   }
 
   private registerVaultEvents(): void {
-    // Phase 1: no vault events yet — placeholder for Phase 2+.
-    // All vault event registration belongs inside this method (ARCHITECTURE.md).
+    this.registerEvent(
+      this.app.vault.on('modify', (file) => {
+        if (file instanceof TFile) this.index.markDirty(file.path);
+      })
+    );
+    this.registerEvent(
+      this.app.vault.on('create', (file) => {
+        if (file instanceof TFile) this.index.markDirty(file.path);
+      })
+    );
+    this.registerEvent(
+      this.app.vault.on('rename', (file, oldPath) => {
+        this.index.remove(oldPath);
+        if (file instanceof TFile) this.index.markDirty(file.path);
+      })
+    );
+    this.registerEvent(
+      this.app.vault.on('delete', (file) => {
+        if (file instanceof TFile) this.index.remove(file.path);
+      })
+    );
   }
 }
