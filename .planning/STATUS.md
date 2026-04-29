@@ -1,7 +1,7 @@
 # Project Status: KB Manager
 
-**Current Phase:** Phase 2 — VaultIndex — Core Data Layer (Phase 1 complete)
-**Overall Progress:** 1/7 phases complete
+**Current Phase:** Phase 3 — Background Update Scheduler (Phase 2 complete)
+**Overall Progress:** 2/7 phases complete
 
 ---
 
@@ -10,7 +10,7 @@
 | # | Phase | Status | Started | Completed |
 |---|-------|--------|---------|-----------|
 | 1 | Plugin Scaffold + Settings + File Safety | Complete | 2026-04-28 | 2026-04-28 |
-| 2 | VaultIndex — Core Data Layer | In progress | 2026-04-29 | - |
+| 2 | VaultIndex — Core Data Layer | Complete | 2026-04-29 | 2026-04-29 |
 | 3 | Background Update Scheduler | Not started | - | - |
 | 4 | MOC Generator | Not started | - | - |
 | 5 | TOC Generator | Not started | - | - |
@@ -21,7 +21,7 @@
 
 ## Current Phase Detail
 
-**Phase 2: VaultIndex — Core Data Layer — IN PROGRESS (1/4 plans complete)**
+**Phase 2: VaultIndex — Core Data Layer — COMPLETE (4/4 plans complete)**
 
 **Goal:** Build a complete in-memory index of all vault files, folders, tags, and headings on startup — and track which files are dirty — so all downstream generators have a single reliable data source.
 
@@ -29,9 +29,9 @@
 
 **Plans:**
 - [x] 02-01-PLAN-types-and-tag-utils.md — Pure-logic types + tag/folder utilities (COMPLETE 2026-04-29)
-- [ ] 02-02-PLAN-vault-index-class.md — VaultIndex class (Wave 2)
-- [ ] 02-03-PLAN-main-integration.md — main.ts wiring (Wave 3)
-- [ ] 02-04-PLAN-tests.md — Vitest tests for tag-utils (Wave 2, parallel with 02-02)
+- [x] 02-02-PLAN-vault-index-class.md — VaultIndex class (COMPLETE 2026-04-29)
+- [x] 02-03-PLAN-main-integration.md — main.ts wiring (COMPLETE 2026-04-29)
+- [x] 02-04-PLAN-tests.md — Vitest tests for tag-utils (COMPLETE 2026-04-29)
 
 **Blockers:** None
 
@@ -77,9 +77,9 @@
 
 ## Session Continuity
 
-**Last session:** 2026-04-29 — Plan 02-01 complete; vault-index-types.ts and tag-utils.ts created with 16 passing Vitest tests
-**Next action:** Execute Plan 02-02 (VaultIndex class) and Plan 02-04 (tag-utils tests) — both Wave 2
-**Resume file:** `.planning/phases/02-vaultindex-core-data-layer/`
+**Last session:** 2026-04-29 — Phase 2 complete; VaultIndex class, main.ts integration, and all 53 Vitest tests passing
+**Next action:** Execute Phase 3 — Background Update Scheduler
+**Resume file:** `.planning/phases/03-scheduler/`
 
 ---
 *Last updated: 2026-04-29*
