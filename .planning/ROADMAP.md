@@ -61,7 +61,13 @@ Plans:
   1. After vault open, the index contains every file, folder, tag (frontmatter + body merged), and heading in the vault — queryable without hitting the file system
   2. Tags of the form `#parent/child` are represented as a nested hierarchy in the index, not a flat list
   3. Files modified since last full rebuild are tracked in a dirty-file set; a fresh rebuild starts from only dirty files, not the entire vault
-**Plans:** TBD
+**Plans:** 4 plans
+
+Plans:
+- [x] 02-01-PLAN-types-and-tag-utils.md — Pure-logic types + tag/folder utilities: vault-index-types.ts, tag-utils.ts (Wave 1) — COMPLETE 2026-04-29
+- [ ] 02-02-PLAN-vault-index-class.md — VaultIndex class: Obsidian-coupled, full query API, rebuild/rebuildDirty (Wave 2)
+- [ ] 02-03-PLAN-main-integration.md — main.ts wiring: index lifecycle, vault event handlers (Wave 3)
+- [ ] 02-04-PLAN-tests.md — Vitest tests for tag-utils pure-logic functions (Wave 2, parallel with 02-02)
 
 ### Phase 3: Background Update Scheduler
 **Goal:** The plugin runs periodic background rebuilds at a user-configured interval without ever running two rebuilds concurrently, and exposes a manual rebuild command that respects the same mutex.
@@ -125,7 +131,7 @@ Plans:
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
 | 1. Plugin Scaffold + Settings + File Safety | 4/4 | Complete | 2026-04-28 |
-| 2. VaultIndex — Core Data Layer | 0/? | Not started | - |
+| 2. VaultIndex — Core Data Layer | 1/4 | In progress | - |
 | 3. Background Update Scheduler | 0/? | Not started | - |
 | 4. MOC Generator | 0/? | Not started | - |
 | 5. TOC Generator | 0/? | Not started | - |
@@ -180,4 +186,4 @@ Plans:
 
 ---
 *Roadmap created: 2026-04-28*
-*Last updated: 2026-04-28 — Plan 01-04 complete; Phase 1 complete: 36 Vitest tests pass, all pure-logic modules verified*
+*Last updated: 2026-04-29 — Phase 2 plans created: 4 plans across 3 waves*
