@@ -24,7 +24,7 @@
 ## Phases
 
 - [x] **Phase 1: Plugin Scaffold + Settings + File Safety** — Plugin loads, settings persist, write-safety contracts enforced — COMPLETE 2026-04-28
-- [ ] **Phase 2: VaultIndex — Core Data Layer** — In-memory vault index built from MetadataCache; all generators unblocked
+- [x] **Phase 2: VaultIndex — Core Data Layer** — In-memory vault index built from MetadataCache; all generators unblocked — COMPLETE 2026-04-29
 - [ ] **Phase 3: Background Update Scheduler** — Periodic background rebuilds with mutex; manual rebuild command works
 - [ ] **Phase 4: MOC Generator** — Dedicated MOC files and inline MOC sections generated and maintained
 - [ ] **Phase 5: TOC Generator** — Per-note TOC and section-level TOC generated and maintained
@@ -131,7 +131,7 @@ Plans:
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
 | 1. Plugin Scaffold + Settings + File Safety | 4/4 | Complete | 2026-04-28 |
-| 2. VaultIndex — Core Data Layer | 1/4 | In progress | - |
+| 2. VaultIndex — Core Data Layer | 4/4 | Complete | 2026-04-29 |
 | 3. Background Update Scheduler | 0/? | Not started | - |
 | 4. MOC Generator | 0/? | Not started | - |
 | 5. TOC Generator | 0/? | Not started | - |
