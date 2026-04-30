@@ -3,8 +3,11 @@ import type KBManagerPlugin from './main';
 import { FileEntry, FolderTreeNode, TagTreeViewNode, buildFolderTree, buildScopedTagHierarchy, buildTagViewTree, countFilesInFolderScope, countPathsInFolderScope, isFileInFolderScope } from './lib/sidebar-data';
 import { isExcluded } from './lib/exclusions';
 import { renderTagScope } from './lib/sidebar-ui';
+import { addNewNoteAction, addTagNoteActions, getFilesNeedingTags, renderNeedsTags } from './lib/sidebar-note-actions';
 
 export const KB_SIDEBAR_VIEW_TYPE = 'kb-manager-sidebar';
+
+type SidebarTab = 'browse' | 'review';
 
 type AppWithSearch = {
   internalPlugins?: { getPluginById(id: string): { instance?: { openGlobalSearch?(query: string): void } } | null };
@@ -16,6 +19,8 @@ export default class KBSidebarView extends ItemView {
   private expandedFolders = new Set<string>();
   private expandedTags = new Set<string>();
   private expandedTagResults = new Set<string>();
+  private isNeedsTagsExpanded = true;
+  private activeTab: SidebarTab = 'browse';
   private selectedFolderPath = '';
   private pulseKey: string | null = null;
 
@@ -41,14 +46,38 @@ export default class KBSidebarView extends ItemView {
     const container = this.containerEl.children[1] as HTMLElement;
     const mocScroll = container.querySelector<HTMLElement>('.kb-section-moc')?.scrollTop ?? 0;
     const tagScroll = container.querySelector<HTMLElement>('.kb-section-tags')?.scrollTop ?? 0;
+    const reviewScroll = container.querySelector<HTMLElement>('.kb-section-review')?.scrollTop ?? 0;
     container.empty();
     container.addClass('kb-manager-sidebar');
-    this.renderMocSection(container);
-    this.renderTagsSection(container);
+    this.renderTabs(container);
+    if (this.activeTab === 'browse') {
+      this.renderMocSection(container);
+      this.renderTagsSection(container);
+    } else {
+      this.renderReviewSection(container);
+    }
     container.querySelector<HTMLElement>('.kb-section-moc')?.scrollTo({ top: mocScroll });
     container.querySelector<HTMLElement>('.kb-section-tags')?.scrollTo({ top: tagScroll });
+    container.querySelector<HTMLElement>('.kb-section-review')?.scrollTo({ top: reviewScroll });
     container.querySelector<HTMLElement>('.kb-row-pulse')?.scrollIntoView({ block: 'nearest' });
     this.pulseKey = null;
+  }
+
+  private renderTabs(parent: HTMLElement): void {
+    const tabs = parent.createDiv({ cls: 'kb-tabs' });
+    this.renderTab(tabs, 'browse', 'Browse');
+    this.renderTab(tabs, 'review', 'Review');
+  }
+
+  private renderTab(parent: HTMLElement, tab: SidebarTab, label: string): void {
+    const button = parent.createEl('button', { text: label, cls: 'kb-tab' });
+    const isActive = this.activeTab === tab;
+    button.toggleClass('is-active', isActive);
+    button.setAttribute('aria-pressed', String(isActive));
+    button.addEventListener('click', () => {
+      this.activeTab = tab;
+      this.render();
+    });
   }
 
   private renderMocSection(parent: HTMLElement): void {
@@ -90,6 +119,7 @@ export default class KBSidebarView extends ItemView {
     if (!isRoot) this.addTwirl(row, hasChildren, isExpanded, () => this.toggleFolder(node.path));
     row.createSpan({ cls: 'kb-label-folder', text: isRoot ? 'Vault' : node.name });
     this.configureFolderToggle(row, node, isExpanded);
+    addNewNoteAction(row, this.addRowAction.bind(this), this.plugin, node.path, []);
     if (node.hasMoc) this.addMocAction(row, node.path);
     if (!node.hasMoc) row.addClass('kb-row-muted');
     if (!isExpanded) return;
@@ -120,6 +150,46 @@ export default class KBSidebarView extends ItemView {
     for (const node of tree) this.renderTagNode(list, node, 0);
   }
 
+  private renderReviewSection(parent: HTMLElement): void {
+    const section = parent.createDiv({ cls: 'kb-section kb-section-review' });
+    section.createEl('h3', { text: 'Review', cls: 'kb-section-header' });
+    const files = this.plugin.index.getAllFiles();
+    const needsTags = getFilesNeedingTags(files, this.selectedFolderPath, path => this.getFile(path), file => this.isKbManaged(file));
+    this.renderReviewSummary(section, needsTags.length);
+    this.renderReviewActions(section);
+    if (needsTags.length > 0) this.renderNeedsTagsSection(section, needsTags);
+    else section.createEl('p', { cls: 'kb-empty', text: 'No untagged notes in scope' });
+  }
+
+  private renderReviewSummary(parent: HTMLElement, needsTagsCount: number): void {
+    const scope = this.selectedFolderPath || 'Vault';
+    const summary = parent.createDiv({ cls: 'kb-review-summary' });
+    summary.createSpan({ cls: 'kb-scope-label', text: scope });
+    summary.createSpan({
+      cls: 'kb-scope-meta',
+      text: `${needsTagsCount} need tags | ${this.plugin.settings.kbReviewReminderDays}d reminder`,
+    });
+  }
+
+  private renderReviewActions(parent: HTMLElement): void {
+    const actions = parent.createDiv({ cls: 'kb-review-actions' });
+    this.renderActionButton(actions, 'alarm-clock', 'Remind', () => {
+      this.plugin.createKbUpdateReminder(this.selectedFolderPath)
+        .catch(err => console.error('KB Manager: reminder failed', err));
+    });
+    this.renderActionButton(actions, 'list-checks', 'Open reminders', () => {
+      this.plugin.openReminderManager();
+    });
+  }
+
+  private renderActionButton(parent: HTMLElement, iconName: string, label: string, activate: () => void): void {
+    const button = parent.createEl('button', { cls: 'kb-action-button' });
+    const icon = button.createSpan({ cls: 'kb-action-button-icon' });
+    setIcon(icon, iconName);
+    button.createSpan({ text: label });
+    button.addEventListener('click', activate);
+  }
+
   private renderTagNode(parent: HTMLElement, node: TagTreeViewNode, depth: number): void {
     const hasChildren = node.children.length > 0;
     const isExpanded = this.expandedTags.has(node.fullPath);
@@ -135,6 +205,7 @@ export default class KBSidebarView extends ItemView {
     this.addTwirl(row, hasChildren, isExpanded, () => this.toggleTag(node.fullPath));
     row.createSpan({ cls: 'kb-label-tag', text: `#${node.name}` });
     row.createSpan({ cls: 'kb-tag-count', text: String(taggedFiles.length) });
+    addTagNoteActions(row, this.addRowAction.bind(this), this.plugin, this.selectedFolderPath, node.fullPath);
     this.addTagSearchAction(row, node.fullPath);
     row.addEventListener('click', () => this.toggleTagResults(node.fullPath));
     this.addKeyboardActivation(row, () => this.toggleTagResults(node.fullPath));
@@ -155,6 +226,19 @@ export default class KBSidebarView extends ItemView {
       return;
     }
     for (const file of files) this.renderTagFileRow(parent, file.path, file.basename, depth);
+  }
+
+  private renderNeedsTagsSection(parent: HTMLElement, files: Array<{ path: string; basename: string }>): void {
+    renderNeedsTags(parent, files, {
+      isExpanded: this.isNeedsTagsExpanded,
+      createTreeRow: (el, depth, cls, key) => this.createTreeRow(el, depth, cls, key),
+      addTwirl: (row, hasChildren, isExpanded, toggle) => this.addTwirl(row, hasChildren, isExpanded, toggle),
+      addRowAction: this.addRowAction.bind(this),
+      addKeyboardActivation: (element, activate) => this.addKeyboardActivation(element, activate),
+      toggle: () => this.toggleNeedsTags(),
+      openFile: path => { this.openFileByPath(path); },
+      promptAddTags: path => this.plugin.promptAddTagsToNote(path),
+    });
   }
 
   private renderTagFileRow(parent: HTMLElement, filePath: string, basename: string, depth: number): void {
@@ -252,6 +336,11 @@ export default class KBSidebarView extends ItemView {
     if (file instanceof TFile) await this.plugin.app.workspace.getLeaf(false).openFile(file);
   }
 
+  private getFile(filePath: string): TFile | null {
+    const file = this.plugin.app.vault.getAbstractFileByPath(filePath);
+    return file instanceof TFile ? file : null;
+  }
+
   private openTagSearch(fullPath: string): void {
     const query = `tag:#${fullPath}`;
     const app = this.plugin.app as typeof this.plugin.app & AppWithSearch;
@@ -283,6 +372,12 @@ export default class KBSidebarView extends ItemView {
     if (this.expandedTagResults.has(fullPath)) this.expandedTagResults.delete(fullPath);
     else this.expandedTagResults.add(fullPath);
     this.pulseKey = `tag:${fullPath}`;
+    this.render();
+  }
+
+  private toggleNeedsTags(): void {
+    this.isNeedsTagsExpanded = !this.isNeedsTagsExpanded;
+    this.pulseKey = 'needs-tags';
     this.render();
   }
 

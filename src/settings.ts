@@ -3,7 +3,10 @@ import { parseFolderRules, parseExclusionPatterns } from 'lib/settings-parser';
 
 export interface KBManagerSettings {
   generatedWritesEnabled: boolean;
+  initializeNoteProperties: boolean;
   updateIntervalMinutes: number;
+  kbReviewReminderDays: number;
+  kbReviewTaskPath: string;
   autoInject: boolean;
   excludedPaths: string[];
   defaultMocFormat: 'dedicated' | 'inline';
@@ -12,7 +15,10 @@ export interface KBManagerSettings {
 
 export const DEFAULT_SETTINGS: KBManagerSettings = {
   generatedWritesEnabled: false,
+  initializeNoteProperties: true,
   updateIntervalMinutes: 5,
+  kbReviewReminderDays: 7,
+  kbReviewTaskPath: 'KB Updates.md',
   autoInject: false,
   excludedPaths: [],
   defaultMocFormat: 'dedicated',
@@ -63,6 +69,20 @@ export class KBSettingsTab extends PluginSettingTab {
       );
 
     new Setting(containerEl)
+      .setName('Initialize note properties')
+      .setDesc(
+        'Adds tags, status, and created properties to new notes that do not already have frontmatter. Existing property values are preserved.'
+      )
+      .addToggle(t =>
+        t
+          .setValue(this.plugin.settings.initializeNoteProperties)
+          .onChange(async v => {
+            this.plugin.settings.initializeNoteProperties = v;
+            try { await this.plugin.saveSettings(); } catch (err) { console.error('KB Manager: failed to save settings', err); }
+          })
+      );
+
+    new Setting(containerEl)
       .setName('Update interval')
       .setDesc(
         'How often KB Manager refreshes its index and, when writes are enabled, updates generated content. Range: 1–60 minutes.'
@@ -80,6 +100,33 @@ export class KBSettingsTab extends PluginSettingTab {
             } catch (err) {
               console.error('KB Manager: failed to save settings', err);
             }
+          })
+      );
+
+    new Setting(containerEl)
+      .setName('KB update reminder')
+      .setDesc('Days from now for reminders created from the KB Manager Review tab.')
+      .addSlider(s =>
+        s
+          .setLimits(1, 30, 1)
+          .setValue(this.plugin.settings.kbReviewReminderDays)
+          .setDynamicTooltip()
+          .onChange(async v => {
+            this.plugin.settings.kbReviewReminderDays = v;
+            try { await this.plugin.saveSettings(); } catch (err) { console.error('KB Manager: failed to save settings', err); }
+          })
+      );
+
+    new Setting(containerEl)
+      .setName('KB update task file')
+      .setDesc('Fallback note used when Quick Reminder is not loaded.')
+      .addText(t =>
+        t
+          .setPlaceholder('KB Updates.md')
+          .setValue(this.plugin.settings.kbReviewTaskPath)
+          .onChange(async v => {
+            this.plugin.settings.kbReviewTaskPath = v.trim() || 'KB Updates.md';
+            try { await this.plugin.saveSettings(); } catch (err) { console.error('KB Manager: failed to save settings', err); }
           })
       );
 

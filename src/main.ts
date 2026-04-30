@@ -1,7 +1,9 @@
 import { Editor, MarkdownView, Notice, Plugin, TFile } from 'obsidian';
 import { KBManagerSettings, DEFAULT_SETTINGS, KBSettingsTab } from 'settings';
 import KBSidebarView, { KB_SIDEBAR_VIEW_TYPE } from './KBSidebarView';
+import KBReminder from './KBReminder';
 import MocGenerator from './MocGenerator';
+import NoteCapture from './NoteCapture';
 import TagManager from './TagManager';
 import TocGenerator from './TocGenerator';
 import VaultIndex from './VaultIndex';
@@ -17,6 +19,8 @@ export default class KBManagerPlugin extends Plugin {
   mocGenerator!: MocGenerator;
   tocGenerator!: TocGenerator;
   tagManager!: TagManager;
+  noteCapture!: NoteCapture;
+  kbReminder!: KBReminder;
   sidebarRefreshCallbacks: Set<() => void> = new Set();
 
   private schedulerHandle: number | null = null;
@@ -29,6 +33,8 @@ export default class KBManagerPlugin extends Plugin {
 
     this.index = new VaultIndex(this.app, this.settings.excludedPaths);
     this.tagManager = new TagManager(this.index);
+    this.noteCapture = new NoteCapture(this.app, this.index, this.tagManager);
+    this.kbReminder = new KBReminder(this.app, this.settings);
     this.mocGenerator = new MocGenerator(this.app, this.index, this.settings);
     this.tocGenerator = new TocGenerator(this.app, this.index, this.settings);
     this.registerView(KB_SIDEBAR_VIEW_TYPE, leaf => new KBSidebarView(leaf, this));
@@ -47,6 +53,8 @@ export default class KBManagerPlugin extends Plugin {
           this.startScheduler();
           this.addManualRebuildControls();
           this.addInsertCommands();
+          this.noteCapture.addCommands(this);
+          this.kbReminder.addCommands(this);
           this.addSidebarControls();
           this.openSidebarOnFirstLoad();
         });
@@ -77,6 +85,26 @@ export default class KBManagerPlugin extends Plugin {
       return;
     }
     await this.runWithLock(() => this.index.rebuild());
+  }
+
+  createNoteFromPrompt(folderPath: string, tags: string[] = []): void {
+    this.noteCapture.createNoteFromPrompt(folderPath, tags);
+  }
+
+  promptAddTagsToNote(filePath: string): void {
+    this.noteCapture.promptAddTagsToNote(filePath);
+  }
+
+  async addTagsToCurrentNote(tags: string[]): Promise<void> {
+    await this.noteCapture.addTagsToCurrentNote(tags);
+  }
+
+  async createKbUpdateReminder(scopePath: string): Promise<void> {
+    await this.kbReminder.createUpdateReminder(scopePath);
+  }
+
+  openReminderManager(): void {
+    this.kbReminder.openReminderManager();
   }
 
   private startScheduler(): void {
@@ -263,7 +291,11 @@ export default class KBManagerPlugin extends Plugin {
     );
     this.registerEvent(
       this.app.vault.on('create', (file) => {
-        if (file instanceof TFile) this.index.markDirty(file.path);
+        if (!(file instanceof TFile)) return;
+        this.index.markDirty(file.path);
+        this.noteCapture
+          .initializeCreatedNote(file, this.settings.initializeNoteProperties, this.settings.excludedPaths)
+          .catch(err => console.error('KB Manager: initialize note properties failed', err));
       })
     );
     this.registerEvent(
