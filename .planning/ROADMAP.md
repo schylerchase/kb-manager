@@ -2,8 +2,8 @@
 
 **Project:** KB Manager — Obsidian Knowledge Base Plugin
 **Core Value:** The vault structure stays accurate without manual work — MOC files, TOC sections, and tag relationships update themselves in the background.
-**Granularity:** Standard (7 phases)
-**Coverage:** 37/37 v1 requirements mapped
+**Granularity:** Standard (8 phases)
+**Coverage:** 40/40 v1 requirements mapped
 
 ---
 
@@ -18,6 +18,7 @@
 | 5 | TOC Generator | Per-note and section-level TOC sections are injected and maintained using the same write infrastructure as MOC | TOC-01..05 | 4 criteria |
 | 6 | TagManager + Tag Hierarchy | A queryable tag hierarchy with cross-reference data is built in memory from vault tags | TAG-01..03 | 3 criteria |
 | 7 | Sidebar View | A persistent sidebar panel shows the live MOC tree and tag hierarchy, surviving restarts | SIDE-01..04 | 4 criteria |
+| 8 | Preview / Apply UX | First-run users see indexed structure in the sidebar without any vault writes; an explicit toggle opts in and triggers immediate apply | PREV-01..03 | 3 criteria |
 
 ---
 
@@ -30,6 +31,7 @@
 - [x] **Phase 5: TOC Generator** — Per-note TOC and section-level TOC generated and maintained — COMPLETE 2026-04-29
 - [x] **Phase 6: TagManager + Tag Hierarchy** — Tag hierarchy built in memory; cross-reference queries work — COMPLETE 2026-04-29
 - [x] **Phase 7: Sidebar View** — Persistent sidebar panel shows live MOC tree and tag hierarchy — COMPLETE 2026-04-29
+- [x] **Phase 8: Preview / Apply UX** — Default-off write gate; first-run users preview the indexed structure before opting in — COMPLETE 2026-04-30
 
 ---
 
@@ -150,6 +152,20 @@ Plans:
 - [x] 07-04-PLAN-tests.md — Sidebar data and integration tests (Wave 4) — COMPLETE 2026-04-29
 **UI hint:** yes
 
+### Phase 8: Preview / Apply UX
+**Goal:** First-run users see the indexed vault structure in the sidebar without any generated content writes; an explicit settings toggle opts in to writes and triggers an immediate manual rebuild so the apply happens without delay.
+**Depends on:** Phase 7
+**Requirements:** PREV-01, PREV-02, PREV-03
+**Success Criteria** (what must be TRUE):
+  1. On first install, the plugin indexes the vault and shows the sidebar but writes no MOC.md, INDEX.md, or managed sections — confirmed by absent files and unchanged user notes
+  2. Toggling `Generated content writes` ON in settings persists the choice and triggers an immediate manual rebuild that materialises the previewed structure
+  3. Status bar reads `KB: preview` while writes are off and `KB: idle` while on; manual-rebuild Notice text reflects the active mode
+**Plans:** 1 plan
+**UI hint:** yes
+
+Plans:
+- [x] 08-01-PLAN-preview-mode-gate.md — Settings field + toggle UI, runGenerators write gate, status bar text, README docs (Wave 1) — COMPLETE 2026-04-30
+
 ---
 
 ## Progress Table
@@ -163,6 +179,7 @@ Plans:
 | 5. TOC Generator | 4/4 | Complete | 2026-04-29 |
 | 6. TagManager + Tag Hierarchy | 2/2 | Complete | 2026-04-29 |
 | 7. Sidebar View | 4/4 | Complete | 2026-04-29 |
+| 8. Preview / Apply UX | 1/1 | Complete | 2026-04-30 |
 
 ---
 
@@ -207,9 +224,12 @@ Plans:
 | SIDE-02 | Phase 7 |
 | SIDE-03 | Phase 7 |
 | SIDE-04 | Phase 7 |
+| PREV-01 | Phase 8 |
+| PREV-02 | Phase 8 |
+| PREV-03 | Phase 8 |
 
-**Mapped:** 37/37 v1 requirements
+**Mapped:** 40/40 v1 requirements
 
 ---
 *Roadmap created: 2026-04-28*
-*Last updated: 2026-04-29 — v1 implementation complete; all 7 phases implemented*
+*Last updated: 2026-04-30 — Phase 8 (preview/apply UX) added and shipped; 8 phases complete*

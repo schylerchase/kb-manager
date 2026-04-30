@@ -1,7 +1,7 @@
 # Project Status: KB Manager
 
-**Current Phase:** v1 implementation complete
-**Overall Progress:** 7/7 phases complete
+**Current Phase:** v1 implementation complete (with Phase 8 preview/apply UX)
+**Overall Progress:** 8/8 phases complete
 
 ---
 
@@ -16,16 +16,17 @@
 | 5 | TOC Generator | Complete | 2026-04-29 | 2026-04-29 |
 | 6 | TagManager + Tag Hierarchy | Complete | 2026-04-29 | 2026-04-29 |
 | 7 | Sidebar View | Complete | 2026-04-29 | 2026-04-29 |
+| 8 | Preview / Apply UX | Complete | 2026-04-30 | 2026-04-30 |
 
 ---
 
 ## Current Phase Detail
 
-**v1 Implementation — COMPLETE (24/24 plans complete)**
+**v1 Implementation — COMPLETE (25/25 plans complete)**
 
-**Goal:** Maintain MOC files, TOC sections, tag hierarchy queries, and a live sidebar from the vault index.
+**Goal:** Maintain MOC files, TOC sections, tag hierarchy queries, and a live sidebar from the vault index, with a default-off write gate so first-run users preview before applying.
 
-**Requirements in scope:** 37/37 v1 requirements
+**Requirements in scope:** 40/40 v1 requirements
 
 **Plans:**
 - [x] Phase 1 — Plugin scaffold, settings, and file safety (COMPLETE 2026-04-28)
@@ -35,6 +36,7 @@
 - [x] Phase 5 — TOC generator (COMPLETE 2026-04-29)
 - [x] Phase 6 — TagManager + tag hierarchy (COMPLETE 2026-04-29)
 - [x] Phase 7 — Sidebar view (COMPLETE 2026-04-29)
+- [x] Phase 8 — Preview / apply UX (COMPLETE 2026-04-30)
 
 **Blockers:** None
 
@@ -89,6 +91,12 @@
 - `VaultIndex.onRebuildComplete` now awaits generator work, so rebuild locking covers generated writes
 - Sidebar uses Obsidian-native ItemView registration and a refresh callback set on the plugin
 
+### Phase 8 Decisions Locked (2026-04-30)
+- `generatedWritesEnabled` setting (default false) gates all generated writes at the `runGenerators` chokepoint — sidebar refresh still fires in preview mode
+- Toggle-on triggers an immediate `runManualRebuild()` so the apply happens without waiting for the next scheduler tick
+- Status bar surfaces preview mode via `KB: preview`; manual-rebuild Notice text branches on the setting
+- Toggle-off is non-destructive: existing `MOC.md` / `INDEX.md` files stay on disk; cleanup deferred to v2
+
 ### Open Questions (from research)
 1. **minAppVersion** — verify `frontmatterLinks` at 1.4.0 against official changelog before setting manifest floor
 2. **Inline MOC opt-in UX** — manual delimiter insert vs "inject here" command vs per-folder auto-inject on first run
@@ -100,9 +108,9 @@
 
 ## Session Continuity
 
-**Last session:** 2026-04-29 — v1 implementation complete; production build and all 98 Vitest tests passing
-**Next action:** Manual UAT in an Obsidian dev vault, then ship/review
+**Last session:** 2026-04-30 — Phase 8 (preview/apply UX) shipped inline; planning docs backfilled
+**Next action:** Build + test verify, then commit Phase 8 (code + plans together)
 **Resume file:** `.planning/STATUS.md`
 
 ---
-*Last updated: 2026-04-29*
+*Last updated: 2026-04-30*

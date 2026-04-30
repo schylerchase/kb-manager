@@ -66,6 +66,12 @@
 - [x] **SET-03**: User can configure per-folder MOC format (dedicated file vs inline injection)
 - [x] **SET-04**: User can enable/disable auto-injection globally
 
+### Preview / Apply UX
+
+- [x] **PREV-01**: Plugin ships with a `Generated content writes` setting, default off, that gates all generated content writes (MOC.md, INDEX.md, managed sections)
+- [x] **PREV-02**: With writes off, manual and scheduled rebuilds refresh the index and sidebar but do not invoke MOC or TOC generators
+- [x] **PREV-03**: Status bar text and rebuild Notice surface preview state to the user; README documents the preview-mode default for first-run users
+
 ## v2 Requirements
 
 ### Multi-vault
@@ -136,12 +142,15 @@
 | SIDE-02 | Phase 7 — Sidebar View | Implemented |
 | SIDE-03 | Phase 7 — Sidebar View | Implemented |
 | SIDE-04 | Phase 7 — Sidebar View | Implemented |
+| PREV-01 | Phase 8 — Preview / Apply UX | Implemented |
+| PREV-02 | Phase 8 — Preview / Apply UX | Implemented |
+| PREV-03 | Phase 8 — Preview / Apply UX | Implemented |
 
 **Coverage:**
-- v1 requirements: 37 total
-- Mapped to phases: 37
+- v1 requirements: 40 total
+- Mapped to phases: 40
 - Unmapped: 0
 
 ---
 *Requirements defined: 2026-04-28*
-*Last updated: 2026-04-29 after v1 implementation*
+*Last updated: 2026-04-30 — Phase 8 (preview/apply UX) requirements added*
