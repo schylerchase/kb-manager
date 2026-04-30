@@ -1,23 +1,14 @@
 import { ItemView, Notice, TFile, WorkspaceLeaf, normalizePath, setIcon } from 'obsidian';
 import type KBManagerPlugin from './main';
-import {
-  FileEntry,
-  FolderTreeNode,
-  TagTreeViewNode,
-  buildFolderTree,
-  buildTagViewTree,
-} from './lib/sidebar-data';
+import { FileEntry, FolderTreeNode, TagTreeViewNode, buildFolderTree, buildScopedTagHierarchy, buildTagViewTree, countFilesInFolderScope, countPathsInFolderScope, isFileInFolderScope } from './lib/sidebar-data';
 import { isExcluded } from './lib/exclusions';
+import { renderTagScope } from './lib/sidebar-ui';
 
 export const KB_SIDEBAR_VIEW_TYPE = 'kb-manager-sidebar';
 
 type AppWithSearch = {
-  internalPlugins?: {
-    getPluginById(id: string): { instance?: { openGlobalSearch?(query: string): void } } | null;
-  };
-  commands?: {
-    executeCommandById(id: string): unknown;
-  };
+  internalPlugins?: { getPluginById(id: string): { instance?: { openGlobalSearch?(query: string): void } } | null };
+  commands?: { executeCommandById(id: string): unknown };
 };
 
 export default class KBSidebarView extends ItemView {
@@ -25,10 +16,10 @@ export default class KBSidebarView extends ItemView {
   private expandedFolders = new Set<string>();
   private expandedTags = new Set<string>();
   private expandedTagResults = new Set<string>();
+  private selectedFolderPath = '';
+  private pulseKey: string | null = null;
 
-  constructor(leaf: WorkspaceLeaf, private plugin: KBManagerPlugin) {
-    super(leaf);
-  }
+  constructor(leaf: WorkspaceLeaf, private plugin: KBManagerPlugin) { super(leaf); }
 
   getViewType(): string { return KB_SIDEBAR_VIEW_TYPE; }
   getDisplayText(): string { return 'KB Manager'; }
@@ -48,10 +39,16 @@ export default class KBSidebarView extends ItemView {
 
   private render(): void {
     const container = this.containerEl.children[1] as HTMLElement;
+    const mocScroll = container.querySelector<HTMLElement>('.kb-section-moc')?.scrollTop ?? 0;
+    const tagScroll = container.querySelector<HTMLElement>('.kb-section-tags')?.scrollTop ?? 0;
     container.empty();
     container.addClass('kb-manager-sidebar');
     this.renderMocSection(container);
     this.renderTagsSection(container);
+    container.querySelector<HTMLElement>('.kb-section-moc')?.scrollTo({ top: mocScroll });
+    container.querySelector<HTMLElement>('.kb-section-tags')?.scrollTo({ top: tagScroll });
+    container.querySelector<HTMLElement>('.kb-row-pulse')?.scrollIntoView({ block: 'nearest' });
+    this.pulseKey = null;
   }
 
   private renderMocSection(parent: HTMLElement): void {
@@ -88,33 +85,37 @@ export default class KBSidebarView extends ItemView {
   private renderFolderNode(parent: HTMLElement, node: FolderTreeNode, depth: number, isRoot: boolean): void {
     const hasChildren = node.childFolders.length > 0 || node.childFiles.length > 0;
     const isExpanded = isRoot || this.expandedFolders.has(node.path);
-    const row = this.createTreeRow(parent, depth, 'kb-row-folder');
+    const row = this.createTreeRow(parent, depth, 'kb-row-folder', `folder:${node.path}`);
+    if (this.selectedFolderPath === node.path) row.addClass('is-active');
     if (!isRoot) this.addTwirl(row, hasChildren, isExpanded, () => this.toggleFolder(node.path));
     row.createSpan({ cls: 'kb-label-folder', text: isRoot ? 'Vault' : node.name });
-    if (node.hasMoc) row.addEventListener('click', () => this.openMocForFolder(node.path));
-    else row.addClass('kb-row-muted');
+    this.configureFolderToggle(row, node, isExpanded);
+    if (node.hasMoc) this.addMocAction(row, node.path);
+    if (!node.hasMoc) row.addClass('kb-row-muted');
     if (!isExpanded) return;
     for (const childFolder of node.childFolders) this.renderFolderNode(parent, childFolder, depth + 1, false);
     for (const file of node.childFiles) this.renderFileRow(parent, file.path, file.basename, depth + 1);
   }
 
   private renderFileRow(parent: HTMLElement, filePath: string, basename: string, depth: number): void {
-    const row = this.createTreeRow(parent, depth, 'kb-row-file');
+    const row = this.createTreeRow(parent, depth, 'kb-row-file', `file:${filePath}`);
     row.createSpan({ text: basename });
     row.addEventListener('click', () => this.openFileByPath(filePath));
   }
 
   private renderTagsSection(parent: HTMLElement): void {
     const section = parent.createDiv({ cls: 'kb-section kb-section-tags' });
+    const folder = this.selectedFolderPath.split('/').pop() || 'Vault';
+    const files = this.plugin.index.getAllFiles();
+    const hierarchy = this.selectedFolderPath === ''
+      ? this.plugin.tagManager.getTagHierarchy()
+      : buildScopedTagHierarchy(files, this.selectedFolderPath);
+    const tree = buildTagViewTree(hierarchy, tag =>
+      countPathsInFolderScope(this.plugin.tagManager.getFilesWithTag(tag), this.selectedFolderPath));
     section.createEl('h3', { text: 'Tags', cls: 'kb-section-header' });
-    const tree = buildTagViewTree(
-      this.plugin.tagManager.getTagHierarchy(),
-      tag => this.plugin.tagManager.getFilesWithTag(tag).length
-    );
-    if (tree.length === 0) {
-      section.createEl('p', { cls: 'kb-empty', text: 'No tags found' });
-      return;
-    }
+    const noteCount = countFilesInFolderScope(files, this.selectedFolderPath);
+    renderTagScope(section, { label: this.selectedFolderPath || folder, noteCount, tagCount: tree.length, canClear: this.selectedFolderPath !== '', clear: () => this.toggleFolder('') });
+    if (tree.length === 0) { section.createEl('p', { cls: 'kb-empty', text: this.selectedFolderPath === '' ? 'No tags found' : 'No tags in this folder' }); return; }
     const list = section.createDiv({ cls: 'kb-tree' });
     for (const node of tree) this.renderTagNode(list, node, 0);
   }
@@ -124,7 +125,7 @@ export default class KBSidebarView extends ItemView {
     const isExpanded = this.expandedTags.has(node.fullPath);
     const isShowingFiles = this.expandedTagResults.has(node.fullPath);
     const taggedFiles = this.getTaggedFiles(node);
-    const row = this.createTreeRow(parent, depth, 'kb-row-tag');
+    const row = this.createTreeRow(parent, depth, 'kb-row-tag', `tag:${node.fullPath}`);
     row.setAttribute('role', 'button');
     row.setAttribute('tabindex', '0');
     row.setAttribute('aria-label', `Show notes tagged #${node.fullPath}`);
@@ -144,17 +145,7 @@ export default class KBSidebarView extends ItemView {
   }
 
   private addTagSearchAction(row: HTMLElement, fullPath: string): void {
-    const action = row.createSpan({ cls: 'kb-row-action kb-tag-search' });
-    setIcon(action, 'search');
-    action.setAttribute('role', 'button');
-    action.setAttribute('tabindex', '0');
-    action.setAttribute('aria-label', `Search for #${fullPath}`);
-    action.setAttribute('title', `Search for #${fullPath}`);
-    action.addEventListener('click', event => {
-      event.stopPropagation();
-      this.openTagSearch(fullPath);
-    });
-    this.addKeyboardActivation(action, () => this.openTagSearch(fullPath));
+    this.addRowAction(row, 'kb-tag-search', 'search', `Search for #${fullPath}`, () => this.openTagSearch(fullPath));
   }
 
   private renderTagFiles(parent: HTMLElement, files: Array<{ path: string; basename: string }>, depth: number): void {
@@ -181,6 +172,7 @@ export default class KBSidebarView extends ItemView {
       .flatMap(path => {
         const file = this.plugin.app.vault.getAbstractFileByPath(path);
         if (!(file instanceof TFile) || this.isKbManaged(file)) return [];
+        if (!isFileInFolderScope(path, this.selectedFolderPath)) return [];
         return [{ path, basename: this.basename(file.name) }];
       })
       .sort((a, b) => a.basename.toLowerCase().localeCompare(b.basename.toLowerCase()));
@@ -191,10 +183,39 @@ export default class KBSidebarView extends ItemView {
     for (const child of node.children) this.collectTaggedFilePaths(child, paths);
   }
 
-  private createTreeRow(parent: HTMLElement, depth: number, cls: string): HTMLElement {
+  private createTreeRow(parent: HTMLElement, depth: number, cls: string, key = ''): HTMLElement {
     const row = parent.createDiv({ cls: `kb-row ${cls}` });
     row.style.paddingLeft = `${depth * 12}px`;
+    if (key === this.pulseKey) row.addClass('kb-row-pulse');
     return row;
+  }
+
+  private configureFolderToggle(row: HTMLElement, node: FolderTreeNode, isExpanded: boolean): void {
+    row.setAttribute('role', 'button');
+    row.setAttribute('tabindex', '0');
+    row.setAttribute('aria-expanded', String(isExpanded));
+    row.setAttribute('aria-label', `Browse ${node.name || 'Vault'}`);
+    row.setAttribute('title', `Show tags in ${node.name || 'Vault'}`);
+    row.addEventListener('click', () => this.toggleFolder(node.path));
+    this.addKeyboardActivation(row, () => this.toggleFolder(node.path));
+  }
+
+  private addMocAction(row: HTMLElement, folderPath: string): void {
+    this.addRowAction(row, 'kb-folder-open', 'file-text', 'Open folder MOC', () => this.openMocForFolder(folderPath));
+  }
+
+  private addRowAction(row: HTMLElement, cls: string, icon: string, label: string, activate: () => void): void {
+    const action = row.createSpan({ cls: `kb-row-action ${cls}` });
+    setIcon(action, icon);
+    action.setAttribute('role', 'button');
+    action.setAttribute('tabindex', '0');
+    action.setAttribute('aria-label', label);
+    action.setAttribute('title', label);
+    action.addEventListener('click', event => {
+      event.stopPropagation();
+      activate();
+    });
+    this.addKeyboardActivation(action, activate);
   }
 
   private addTwirl(row: HTMLElement, hasChildren: boolean, isExpanded: boolean, toggle: () => void): void {
@@ -244,20 +265,24 @@ export default class KBSidebarView extends ItemView {
   }
 
   private toggleFolder(folderPath: string): void {
+    this.selectedFolderPath = folderPath;
     if (this.expandedFolders.has(folderPath)) this.expandedFolders.delete(folderPath);
     else this.expandedFolders.add(folderPath);
+    this.pulseKey = `folder:${folderPath}`;
     this.render();
   }
 
   private toggleTag(fullPath: string): void {
     if (this.expandedTags.has(fullPath)) this.expandedTags.delete(fullPath);
     else this.expandedTags.add(fullPath);
+    this.pulseKey = `tag:${fullPath}`;
     this.render();
   }
 
   private toggleTagResults(fullPath: string): void {
     if (this.expandedTagResults.has(fullPath)) this.expandedTagResults.delete(fullPath);
     else this.expandedTagResults.add(fullPath);
+    this.pulseKey = `tag:${fullPath}`;
     this.render();
   }
 

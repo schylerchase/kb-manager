@@ -1,4 +1,5 @@
-import { TagNode } from './vault-index-types';
+import { FileRecord, TagNode } from './vault-index-types';
+import { buildTagTree } from './tag-utils';
 
 export interface FolderTreeNode {
   type: 'folder';
@@ -20,6 +21,28 @@ export interface TagTreeViewNode {
   fullPath: string;
   count: number;
   children: TagTreeViewNode[];
+}
+
+export function buildScopedTagHierarchy(
+  files: FileRecord[],
+  folderPath: string
+): Map<string, TagNode> {
+  return buildTagTree(files
+    .filter(file => isFileInFolderScope(file.path, folderPath))
+    .map(file => ({ filePath: file.path, tags: file.tags })));
+}
+
+export function isFileInFolderScope(filePath: string, folderPath: string): boolean {
+  if (folderPath === '') return true;
+  return filePath.startsWith(`${folderPath}/`);
+}
+
+export function countFilesInFolderScope(files: FileRecord[], folderPath: string): number {
+  return files.filter(file => isFileInFolderScope(file.path, folderPath)).length;
+}
+
+export function countPathsInFolderScope(paths: string[], folderPath: string): number {
+  return paths.filter(path => isFileInFolderScope(path, folderPath)).length;
 }
 
 function lastSegment(path: string): string {

@@ -1,5 +1,13 @@
 import { describe, it, expect } from 'vitest';
-import { buildFolderTree, buildTagViewTree, FileEntry } from './sidebar-data';
+import {
+  buildFolderTree,
+  buildScopedTagHierarchy,
+  buildTagViewTree,
+  countFilesInFolderScope,
+  countPathsInFolderScope,
+  FileEntry,
+  isFileInFolderScope,
+} from './sidebar-data';
 import { TagNode } from './vault-index-types';
 
 const isExcluded = (path: string, patterns: string[]): boolean => {
@@ -77,5 +85,42 @@ describe('buildTagViewTree', () => {
     };
     const tree = buildTagViewTree(new Map([['root', node]]), () => 0);
     expect(tree[0]?.children.map(child => child.name)).toEqual(['Alpha', 'zeta']);
+  });
+});
+
+describe('buildScopedTagHierarchy', () => {
+  it('includes tags from files in the selected folder and descendants', () => {
+    const tree = buildScopedTagHierarchy([
+      { path: 'notes/a.md', tags: ['aws'], headings: [], folderPath: 'notes' },
+      { path: 'notes/projects/b.md', tags: ['azure'], headings: [], folderPath: 'notes/projects' },
+      { path: 'archive/c.md', tags: ['old'], headings: [], folderPath: 'archive' },
+    ], 'notes');
+    expect([...tree.keys()]).toEqual(['aws', 'azure']);
+  });
+
+  it('treats root scope as the full vault', () => {
+    const tree = buildScopedTagHierarchy([
+      { path: 'a.md', tags: ['root'], headings: [], folderPath: '' },
+      { path: 'notes/b.md', tags: ['nested'], headings: [], folderPath: 'notes' },
+    ], '');
+    expect([...tree.keys()]).toEqual(['root', 'nested']);
+  });
+});
+
+describe('isFileInFolderScope', () => {
+  it('does not match sibling folder prefixes', () => {
+    expect(isFileInFolderScope('notebook/a.md', 'note')).toBe(false);
+    expect(isFileInFolderScope('note/a.md', 'note')).toBe(true);
+  });
+});
+
+describe('scope counts', () => {
+  it('counts scoped files and paths', () => {
+    const files = [
+      { path: 'notes/a.md', tags: [], headings: [], folderPath: 'notes' },
+      { path: 'archive/b.md', tags: [], headings: [], folderPath: 'archive' },
+    ];
+    expect(countFilesInFolderScope(files, 'notes')).toBe(1);
+    expect(countPathsInFolderScope(['notes/a.md', 'archive/b.md'], 'notes')).toBe(1);
   });
 });

@@ -105,6 +105,11 @@ export default class VaultIndex {
     return Array.from(this.folders.keys());
   }
 
+  /** All indexed file records. */
+  getAllFiles(): FileRecord[] {
+    return Array.from(this.files.values());
+  }
+
   /** Raw tag hierarchy tree. D-04/D-06. */
   getTagTree(): Map<string, TagNode> {
     return this.tagTree;
