@@ -8,6 +8,7 @@ import VaultIndex from './VaultIndex';
 import { buildDelimiter, isWriteSafe, type DelimiterType } from './lib/delimiter';
 
 const STATUS_IDLE = 'KB: idle';
+const STATUS_PREVIEW = 'KB: preview';
 const STATUS_REBUILDING = 'KB: rebuilding…';
 
 export default class KBManagerPlugin extends Plugin {
@@ -36,7 +37,7 @@ export default class KBManagerPlugin extends Plugin {
 
     this.app.workspace.onLayoutReady(() => {
       this.statusBarItem = this.addStatusBarItem();
-      this.statusBarItem.setText(STATUS_IDLE);
+      this.statusBarItem.setText(this.statusText());
       this.registerVaultEvents();
       this.index.onRebuildComplete = () => this.runGenerators();
 
@@ -134,7 +135,7 @@ export default class KBManagerPlugin extends Plugin {
     try {
       await work();
     } finally {
-      this.statusBarItem?.setText(STATUS_IDLE);
+      this.statusBarItem?.setText(this.statusText());
     }
   }
 
@@ -182,7 +183,10 @@ export default class KBManagerPlugin extends Plugin {
   private async triggerManualRebuild(): Promise<void> {
     try {
       await this.runManualRebuild();
-      new Notice('KB Manager: rebuild complete');
+      const message = this.settings.generatedWritesEnabled
+        ? 'KB Manager: rebuild complete'
+        : 'KB Manager: preview refreshed - generated writes are off';
+      new Notice(message);
     } catch (err) {
       console.error('KB Manager: manual rebuild failed', err);
       new Notice('KB Manager: rebuild failed — see console');
@@ -190,9 +194,17 @@ export default class KBManagerPlugin extends Plugin {
   }
 
   private async runGenerators(): Promise<void> {
+    if (!this.settings.generatedWritesEnabled) {
+      this.notifySidebarRefresh();
+      return;
+    }
     await this.mocGenerator.run();
     await this.tocGenerator.run();
     this.notifySidebarRefresh();
+  }
+
+  private statusText(): string {
+    return this.settings.generatedWritesEnabled ? STATUS_IDLE : STATUS_PREVIEW;
   }
 
   private insertSectionAtCursor(editor: Editor, view: MarkdownView, type: DelimiterType): void {

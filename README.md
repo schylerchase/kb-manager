@@ -64,6 +64,8 @@ After installing, reload Obsidian and enable `KB Manager` in:
 Settings -> Community plugins -> Installed plugins
 ```
 
+On first enable, KB Manager starts in preview mode. It indexes the vault and opens the sidebar, but it does not create `MOC.md`, create `INDEX.md`, or update managed sections until `Generated content writes` is enabled in the plugin settings.
+
 ## Manual Install
 
 Build the plugin:

@@ -27,3 +27,5 @@ If you omit the path, the script will ask for it.
 Restart Obsidian, or reload the app, then enable `KB Manager` under:
 
 Settings -> Community plugins -> Installed plugins.
+
+KB Manager starts in preview mode. It indexes the vault and shows the sidebar without writing generated files or managed sections until `Generated content writes` is enabled in the plugin settings.

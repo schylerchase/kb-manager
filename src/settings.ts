@@ -2,6 +2,7 @@ import { App, PluginSettingTab, Setting } from 'obsidian';
 import { parseFolderRules, parseExclusionPatterns } from 'lib/settings-parser';
 
 export interface KBManagerSettings {
+  generatedWritesEnabled: boolean;
   updateIntervalMinutes: number;
   autoInject: boolean;
   excludedPaths: string[];
@@ -10,6 +11,7 @@ export interface KBManagerSettings {
 }
 
 export const DEFAULT_SETTINGS: KBManagerSettings = {
+  generatedWritesEnabled: false,
   updateIntervalMinutes: 5,
   autoInject: false,
   excludedPaths: [],
@@ -21,6 +23,7 @@ type SettingsHost = {
   settings: KBManagerSettings;
   saveSettings(): Promise<void>;
   restartScheduler(): void;
+  runManualRebuild(): Promise<void>;
 };
 
 export class KBSettingsTab extends PluginSettingTab {
@@ -41,9 +44,28 @@ export class KBSettingsTab extends PluginSettingTab {
     containerEl.createEl('h3', { text: 'General' });
 
     new Setting(containerEl)
+      .setName('Generated content writes')
+      .setDesc(
+        'Off by default. Preview the MOC tree and tags without creating MOC.md, INDEX.md, or updating managed sections.'
+      )
+      .addToggle(t =>
+        t
+          .setValue(this.plugin.settings.generatedWritesEnabled)
+          .onChange(async v => {
+            this.plugin.settings.generatedWritesEnabled = v;
+            try {
+              await this.plugin.saveSettings();
+              if (v) await this.plugin.runManualRebuild();
+            } catch (err) {
+              console.error('KB Manager: failed to save settings', err);
+            }
+          })
+      );
+
+    new Setting(containerEl)
       .setName('Update interval')
       .setDesc(
-        'How often KB Manager rebuilds MOC files and TOC sections in the background. Range: 1–60 minutes.'
+        'How often KB Manager refreshes its index and, when writes are enabled, updates generated content. Range: 1–60 minutes.'
       )
       .addSlider(s =>
         s
@@ -64,7 +86,7 @@ export class KBSettingsTab extends PluginSettingTab {
     new Setting(containerEl)
       .setName('Auto-injection')
       .setDesc(
-        'When enabled, automatically injects MOC sections into all notes in folders configured for inline format. Disabled by default — enable after reviewing per-folder rules.'
+        'When writes are enabled, automatically injects MOC sections into all notes in folders configured for inline format. Disabled by default.'
       )
       .addToggle(t =>
         t
@@ -101,7 +123,7 @@ export class KBSettingsTab extends PluginSettingTab {
     new Setting(containerEl)
       .setName('Default MOC format')
       .setDesc(
-        'How MOC content is delivered when no per-folder rule applies. "Dedicated file" creates a MOC.md in each folder. "Inline injection" updates sections inside existing notes that contain delimiter markers.'
+        'How MOC content is planned when no per-folder rule applies. Dedicated writes create MOC.md files; inline writes update notes with delimiter markers.'
       )
       .addDropdown(dd =>
         dd
