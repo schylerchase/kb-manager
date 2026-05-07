@@ -1,4 +1,4 @@
-import { App, Modal, Notice, Plugin, Setting, TFile } from 'obsidian';
+import { App, Modal, Notice, Plugin, Setting, TFile, TFolder } from 'obsidian';
 import TagManager from './TagManager';
 import VaultIndex from './VaultIndex';
 import {
@@ -6,6 +6,8 @@ import {
   getAvailableNotePath,
   initializeFrontmatter,
   mergeTags,
+  type NewNoteKind,
+  normalizeNoteFolderPath,
   normalizeNoteTags,
   parseNoteTags,
   sanitizeNoteTitle,
@@ -22,8 +24,18 @@ export default class NoteCapture {
   addCommands(plugin: Plugin): void {
     plugin.addCommand({
       id: 'kb-manager-new-note-current-folder',
-      name: 'KB Manager: New note in current folder',
+      name: 'KB Manager: New KB note here',
       callback: () => { this.createNoteFromPrompt(this.getActiveFolderPath()); },
+    });
+    plugin.addCommand({
+      id: 'kb-manager-new-moc-note-here',
+      name: 'KB Manager: New MOC note here',
+      callback: () => { this.createNoteFromPrompt(this.getActiveFolderPath(), [], 'moc'); },
+    });
+    plugin.addCommand({
+      id: 'kb-manager-new-toc-note-here',
+      name: 'KB Manager: New TOC note here',
+      callback: () => { this.createNoteFromPrompt(this.getActiveFolderPath(), [], 'toc'); },
     });
     plugin.addCommand({
       id: 'kb-manager-add-tags-current-note',
@@ -39,9 +51,9 @@ export default class NoteCapture {
     });
   }
 
-  createNoteFromPrompt(folderPath: string, tags: string[] = []): void {
-    new KBNoteTitleModal(this.app, folderPath, tags, title => {
-      this.createNote(folderPath, title, tags).catch(err => this.reportError('create note', err));
+  createNoteFromPrompt(folderPath: string, tags: string[] = [], kind: NewNoteKind = 'kb'): void {
+    new KBNoteTitleModal(this.app, folderPath, tags, kind, request => {
+      this.createNote(request.folderPath, request.title, request.tags, request.kind).catch(err => this.reportError('create note', err));
     }).open();
   }
 
@@ -96,13 +108,15 @@ export default class NoteCapture {
     }).open();
   }
 
-  private async createNote(folderPath: string, title: string, tags: string[]): Promise<void> {
-    const path = getAvailableNotePath(folderPath, title, p => this.app.vault.getAbstractFileByPath(p) !== null);
-    const file = await this.app.vault.create(path, buildNewNoteContent(title, tags, new Date()));
+  private async createNote(folderPath: string, title: string, tags: string[], kind: NewNoteKind): Promise<void> {
+    const normalizedFolder = normalizeNoteFolderPath(folderPath);
+    await this.ensureFolderPath(normalizedFolder);
+    const path = getAvailableNotePath(normalizedFolder, title, p => this.app.vault.getAbstractFileByPath(p) !== null);
+    const file = await this.app.vault.create(path, buildNewNoteContent(title, tags, new Date(), kind));
     this.index.markDirty(file.path);
     await this.index.rebuildDirty();
     await this.app.workspace.getLeaf(false).openFile(file);
-    new Notice(`KB Manager: created ${sanitizeNoteTitle(title)}`);
+    new Notice(`KB Manager: created ${this.kindLabel(kind)} ${sanitizeNoteTitle(title)}`);
   }
 
   private async addTagsToFile(file: TFile, tags: string[]): Promise<void> {
@@ -142,56 +156,101 @@ export default class NoteCapture {
     return tags.map(tag => `#${tag}`).join(', ');
   }
 
+  private kindLabel(kind: NewNoteKind): string {
+    if (kind === 'moc') return 'MOC';
+    if (kind === 'toc') return 'TOC';
+    return 'KB note';
+  }
+
+  private async ensureFolderPath(folderPath: string): Promise<void> {
+    if (folderPath === '') return;
+    const parts = folderPath.split('/').filter(Boolean);
+    let current = '';
+    for (const part of parts) {
+      current = current === '' ? part : `${current}/${part}`;
+      const existing = this.app.vault.getAbstractFileByPath(current);
+      if (existing instanceof TFolder) continue;
+      if (existing !== null) throw new Error(`Path exists and is not a folder: ${current}`);
+      await this.app.vault.createFolder(current);
+    }
+  }
+
   private reportError(action: string, err: unknown): void {
     console.error(`KB Manager: ${action} failed`, err);
     new Notice(`KB Manager: could not ${action} - see console`);
   }
 }
 
+type KBNoteCreateRequest = {
+  title: string;
+  folderPath: string;
+  tags: string[];
+  kind: NewNoteKind;
+};
+
 class KBNoteTitleModal extends Modal {
   constructor(
     app: App,
     private folderPath: string,
     private tags: string[],
-    private onSubmit: (title: string) => void
+    private kind: NewNoteKind,
+    private onSubmit: (request: KBNoteCreateRequest) => void
   ) {
     super(app);
   }
 
   onOpen(): void {
     let title = '';
+    let folderPath = this.folderPath;
+    let kind = this.kind;
     this.titleEl.setText('New KB note');
     this.contentEl.empty();
     new Setting(this.contentEl)
-      .setName(this.folderLabel())
+      .setName('Title')
       .addText(text => {
         text.setPlaceholder('MCP Goals').onChange(value => { title = value; });
-        text.inputEl.addEventListener('keydown', event => this.handleEnter(event, title));
+        text.inputEl.addEventListener('keydown', event => this.handleEnter(event, title, folderPath, kind));
+      });
+    new Setting(this.contentEl)
+      .setName('Folder')
+      .setDesc('Vault-relative folder path. Leave blank for vault root.')
+      .addText(text => {
+        text.setPlaceholder('Projects/MCP').setValue(folderPath).onChange(value => { folderPath = this.cleanFolderPath(value); });
+        text.inputEl.addEventListener('keydown', event => this.handleEnter(event, title, folderPath, kind));
+      });
+    new Setting(this.contentEl)
+      .setName('Type')
+      .addDropdown(dropdown => {
+        dropdown
+          .addOption('kb', 'KB note')
+          .addOption('moc', 'MOC note')
+          .addOption('toc', 'TOC note')
+          .setValue(kind)
+          .onChange(value => { kind = value as NewNoteKind; });
       });
     new Setting(this.contentEl).addButton(button =>
-      button.setButtonText('Create').setCta().onClick(() => this.submit(title))
+      button.setButtonText('Create').setCta().onClick(() => this.submit(title, folderPath, kind))
     );
   }
 
-  private folderLabel(): string {
-    const folder = this.folderPath === '' ? 'Vault root' : this.folderPath;
-    const tags = this.tags.length === 0 ? '' : ` | ${this.formatTags()}`;
-    return `${folder}${tags}`;
-  }
-
-  private formatTags(): string {
-    return this.tags.map(tag => `#${tag}`).join(', ');
-  }
-
-  private handleEnter(event: KeyboardEvent, title: string): void {
+  private handleEnter(event: KeyboardEvent, title: string, folderPath: string, kind: NewNoteKind): void {
     if (event.key !== 'Enter') return;
     event.preventDefault();
-    this.submit(title);
+    this.submit(title, folderPath, kind);
   }
 
-  private submit(title: string): void {
+  private cleanFolderPath(folderPath: string): string {
+    return normalizeNoteFolderPath(folderPath);
+  }
+
+  private submit(title: string, folderPath: string, kind: NewNoteKind): void {
     this.close();
-    this.onSubmit(sanitizeNoteTitle(title));
+    this.onSubmit({
+      title: sanitizeNoteTitle(title),
+      folderPath: this.cleanFolderPath(folderPath),
+      tags: this.tags,
+      kind,
+    });
   }
 }
 

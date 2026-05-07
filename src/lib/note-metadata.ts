@@ -1,4 +1,8 @@
+import { buildDelimiter } from './delimiter';
+
 const INVALID_FILENAME_CHARS = /[\\/:*?"<>|#^[\]]+/g;
+
+export type NewNoteKind = 'kb' | 'moc' | 'toc';
 
 export function sanitizeNoteTitle(input: string): string {
   const collapsed = input.trim().replace(/\s+/g, ' ');
@@ -58,7 +62,7 @@ export function getAvailableNotePath(
   title: string,
   pathExists: (path: string) => boolean
 ): string {
-  const folder = folderPath.trim().replace(/^\/+|\/+$/g, '');
+  const folder = normalizeNoteFolderPath(folderPath);
   const baseName = sanitizeNoteTitle(title);
   let suffix = 1;
   let path = buildNotePath(folder, baseName);
@@ -69,13 +73,42 @@ export function getAvailableNotePath(
   return path;
 }
 
-export function buildNewNoteContent(title: string, tags: string[], date: Date): string {
+export function normalizeNoteFolderPath(folderPath: string): string {
+  return folderPath
+    .trim()
+    .replace(/\\/g, '/')
+    .replace(/\/+/g, '/')
+    .replace(/^\/+|\/+$/g, '');
+}
+
+export function buildNewNoteContent(title: string, tags: string[], date: Date, kind: NewNoteKind = 'kb'): string {
   const normalizedTags = normalizeNoteTags(tags);
   const lines = ['---'];
   if (normalizedTags.length === 0) lines.push('tags: []');
   else lines.push('tags:', ...normalizedTags.map(tag => `  - ${tag}`));
-  lines.push('status: inbox', `created: ${formatDate(date)}`, '---', '', `# ${sanitizeNoteTitle(title)}`, '');
+  lines.push('status: inbox', `created: ${formatDate(date)}`, `kb-type: ${kind}`, '---', '', `# ${sanitizeNoteTitle(title)}`, '');
+  lines.push(...buildInitialSection(kind));
   return lines.join('\n');
+}
+
+function buildInitialSection(kind: NewNoteKind): string[] {
+  if (kind === 'moc') {
+    return [
+      buildDelimiter('moc', 'start'),
+      '<!-- pending rebuild -->',
+      buildDelimiter('moc', 'end'),
+      '',
+    ];
+  }
+  if (kind === 'toc') {
+    return [
+      buildDelimiter('toc', 'start'),
+      '_KB Manager will replace this with links to headings in this note after rebuild._',
+      buildDelimiter('toc', 'end'),
+      '',
+    ];
+  }
+  return [''];
 }
 
 function buildNotePath(folderPath: string, baseName: string): string {

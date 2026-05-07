@@ -5,6 +5,7 @@ import {
   getAvailableNotePath,
   initializeFrontmatter,
   mergeTags,
+  normalizeNoteFolderPath,
   parseNoteTags,
   sanitizeNoteTitle,
 } from './note-metadata';
@@ -40,10 +41,27 @@ describe('note metadata helpers', () => {
     );
   });
 
+  it('normalizes note folder paths for project-local wiki creation', () => {
+    expect(normalizeNoteFolderPath(' /Projects//MCP\\Wiki/ ')).toBe('Projects/MCP/Wiki');
+  });
+
   it('builds frontmatter for new notes', () => {
     expect(buildNewNoteContent('MCP Goals', ['mcp'], new Date(2026, 3, 30))).toContain(
-      'tags:\n  - mcp\nstatus: inbox\ncreated: 2026-04-30'
+      'tags:\n  - mcp\nstatus: inbox\ncreated: 2026-04-30\nkb-type: kb'
     );
+  });
+
+  it('instantiates MOC notes with editable managed section delimiters', () => {
+    const content = buildNewNoteContent('Project Wiki', [], new Date(2026, 3, 30), 'moc');
+    expect(content).toContain('kb-type: moc');
+    expect(content).toContain('<!-- kb-manager:moc:start -->\n<!-- pending rebuild -->\n<!-- kb-manager:moc:end -->');
+  });
+
+  it('instantiates TOC notes with editable managed section delimiters', () => {
+    const content = buildNewNoteContent('Project Index', [], new Date(2026, 3, 30), 'toc');
+    expect(content).toContain('kb-type: toc');
+    expect(content).toContain('<!-- kb-manager:toc:start -->');
+    expect(content).toContain('<!-- kb-manager:toc:end -->');
   });
 
   it('initializes missing frontmatter without overwriting existing fields', () => {

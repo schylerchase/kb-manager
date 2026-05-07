@@ -21,8 +21,9 @@ export default class MocGenerator {
       const body = buildMocBody(this.buildInputForFolder(folderPath));
       if (this.resolveFormat(folderPath) === 'dedicated') {
         await this.writeDedicated(folderPath, body);
+        await this.injectInline(folderPath, body, false);
       } else {
-        await this.injectInline(folderPath, body);
+        await this.injectInline(folderPath, body, true);
       }
     }
   }
@@ -68,17 +69,17 @@ export default class MocGenerator {
     await this.app.vault.create(mocPath, fullContent);
   }
 
-  private async injectInline(folderPath: string, body: string): Promise<void> {
+  private async injectInline(folderPath: string, body: string, allowAutoInject: boolean): Promise<void> {
     for (const record of this.index.getFilesInFolder(folderPath)) {
       if (isExcluded(record.path, this.settings.excludedPaths)) continue;
       const file = this.app.vault.getAbstractFileByPath(record.path);
       if (!(file instanceof TFile)) continue;
       if (file.name === MOC_BASENAME || this.isKbManaged(file)) continue;
-      await this.processInlineFile(file, body);
+      await this.processInlineFile(file, body, allowAutoInject);
     }
   }
 
-  private async processInlineFile(file: TFile, body: string): Promise<void> {
+  private async processInlineFile(file: TFile, body: string, allowAutoInject: boolean): Promise<void> {
     const startDelim = buildDelimiter('moc', 'start');
     const endDelim = buildDelimiter('moc', 'end');
     await this.app.vault.process(file, content => {
@@ -86,7 +87,7 @@ export default class MocGenerator {
         return replaceDelimitedSection(content, 'moc', body.trimEnd());
       }
       const hasAnyDelimiter = content.includes(startDelim) || content.includes(endDelim);
-      if (!this.settings.autoInject || hasAnyDelimiter) return content;
+      if (!allowAutoInject || !this.settings.autoInject || hasAnyDelimiter) return content;
       const appended = `${content}\n\n${startDelim}\n${endDelim}\n`;
       return replaceDelimitedSection(appended, 'moc', body.trimEnd());
     });
