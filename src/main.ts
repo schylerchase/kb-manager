@@ -172,23 +172,23 @@ export default class KBManagerPlugin extends Plugin {
       this.triggerManualRebuild();
     });
     this.addCommand({
-      id: 'kb-manager-rebuild',
-      name: 'KB Manager: Rebuild now',
+      id: 'rebuild',
+      name: 'Rebuild now',
       callback: () => { this.triggerManualRebuild(); },
     });
   }
 
   private addInsertCommands(): void {
     this.addCommand({
-      id: 'kb-manager-insert-moc',
-      name: 'KB Manager: Insert MOC here',
+      id: 'insert-moc',
+      name: 'Insert MOC here',
       editorCallback: (editor: Editor, view: MarkdownView) => {
         this.insertSectionAtCursor(editor, view, 'moc');
       },
     });
     this.addCommand({
-      id: 'kb-manager-insert-toc',
-      name: 'KB Manager: Insert note TOC here',
+      id: 'insert-toc',
+      name: 'Insert note TOC here',
       editorCallback: (editor: Editor, view: MarkdownView) => {
         this.insertSectionAtCursor(editor, view, 'toc');
       },
@@ -200,8 +200,8 @@ export default class KBManagerPlugin extends Plugin {
       this.activateSidebar().catch(err => console.error('KB Manager: activateSidebar failed', err));
     });
     this.addCommand({
-      id: 'kb-manager-open-sidebar',
-      name: 'KB Manager: Open sidebar',
+      id: 'open-sidebar',
+      name: 'Open sidebar',
       callback: () => {
         this.activateSidebar().catch(err => console.error('KB Manager: activateSidebar failed', err));
       },

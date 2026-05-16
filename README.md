@@ -28,6 +28,32 @@ KB Manager only overwrites files or sections it owns:
 
 The plugin is intended for local vaults and does not make network calls.
 
+## Integrations
+
+KB Manager owns KB structure, MOCs, TOCs, metadata, and review workflows. It can optionally hand off "review this KB area" signals to a companion reminder plugin.
+
+- **Quick Reminder (optional).** If the [Quick Reminder](https://github.com/schylerchase/quick-reminder) plugin is installed and enabled, **Create KB update reminder** schedules a native-notification reminder in Quick Reminder.
+- **Fallback (always available).** If Quick Reminder is missing, disabled, or its API is unavailable, KB Manager writes a plain Markdown task to the note configured under **Settings -> KB Manager -> KB update task file** (default `KB Updates.md`). Review tasks are never lost.
+
+Integration is resilient. KB Manager does not crash, fail, or block any of its core MOC, TOC, sidebar, or rebuild features if Quick Reminder is absent. KB Manager does not bundle or copy any Quick Reminder code.
+
+## Commands
+
+KB Manager registers these commands. Obsidian shows each one prefixed with `KB Manager:` in the command palette.
+
+| Command | What it does |
+|---|---|
+| Rebuild now | Manually re-index the vault and run generators. |
+| Insert MOC here | Insert MOC delimiters at the cursor in the active note. |
+| Insert note TOC here | Insert note TOC delimiters at the cursor in the active note. |
+| Open sidebar | Open the KB Manager sidebar view. |
+| New KB note here | Create a new note in the active folder. |
+| New MOC note here | Create a new note seeded as a folder MOC. |
+| New TOC note here | Create a new note seeded as a per-note TOC. |
+| Add tags to current note | Append tags to the active note. |
+| Initialize properties for current note | Add KB property frontmatter to the active note. |
+| Create KB update reminder | Schedule a KB review via Quick Reminder, or write a Markdown review task fallback. |
+
 ## Install From GitHub With BRAT
 
 For beta installs from GitHub, use [BRAT](https://github.com/TfTHacker/obsidian42-brat).
@@ -139,6 +165,8 @@ npm run package:installer
 Version: `0.1.0`
 
 This is an early personal-use release. Back up important vaults before trying any plugin that writes generated content.
+
+KB Manager does not include an in-app self-updater. Updates are installed by BRAT or by replacing `main.js`, `manifest.json`, and `styles.css` in the vault's plugin folder and reloading the plugin.
 
 ## Release Process
 

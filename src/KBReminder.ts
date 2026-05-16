@@ -1,20 +1,11 @@
-import { App, Notice, Plugin, TFile, normalizePath } from "obsidian";
-import type { KBManagerSettings } from "./settings";
+import { App, Notice, Plugin, TFile, normalizePath } from 'obsidian';
+import type { KBManagerSettings } from './settings';
 import {
   buildReminderDraft,
   buildReviewTaskLine,
   getReviewDueAt,
-} from "./lib/kb-reminder";
-
-type QuickReminder = {
-  store?: { add(reminder: unknown): Promise<void> };
-  scheduler?: { schedule(reminder: unknown): void };
-};
-
-type AppWithPlugins = App & {
-  commands?: { executeCommandById(id: string): unknown };
-  plugins?: { plugins?: Record<string, unknown> };
-};
+} from './lib/kb-reminder';
+import { getQuickReminderAdapter } from './lib/quick-reminder-adapter';
 
 export default class KBReminder {
   constructor(
@@ -24,10 +15,10 @@ export default class KBReminder {
 
   addCommands(plugin: Plugin): void {
     plugin.addCommand({
-      id: "kb-manager-create-update-reminder",
-      name: "KB Manager: Create KB update reminder",
+      id: 'create-update-reminder',
+      name: 'Create KB update reminder',
       callback: () => {
-        this.createUpdateReminder("").catch((err) => this.reportError(err));
+        this.createUpdateReminder('').catch(err => this.reportError(err));
       },
     });
   }
@@ -36,12 +27,23 @@ export default class KBReminder {
     const now = new Date();
     const dueAt = getReviewDueAt(this.settings.kbReviewReminderDays, now);
     const reminder = buildReminderDraft(scopePath, dueAt, now);
-    if (await this.tryQuickReminder(reminder)) {
-      new Notice(
-        `KB Manager: reminder set for ${new Date(dueAt).toLocaleDateString()}`,
-      );
-      return;
+
+    const adapter = getQuickReminderAdapter(this.app);
+    if (adapter) {
+      try {
+        await adapter.addAndSchedule(reminder);
+        new Notice(
+          `KB Manager: reminder set for ${new Date(dueAt).toLocaleDateString()}`,
+        );
+        return;
+      } catch (err) {
+        console.warn(
+          'KB Manager: Quick Reminder integration failed, falling back to Markdown task',
+          err,
+        );
+      }
     }
+
     await this.writeFallbackTask(scopePath, dueAt);
     new Notice(
       `KB Manager: review task added to ${this.settings.kbReviewTaskPath}`,
@@ -49,25 +51,14 @@ export default class KBReminder {
   }
 
   openReminderManager(): void {
-    const app = this.app as AppWithPlugins;
-    app.commands?.executeCommandById("quick-reminder:open-view");
-  }
-
-  private async tryQuickReminder(reminder: unknown): Promise<boolean> {
-    const quickReminder = this.getQuickReminder();
-    if (!quickReminder?.store?.add || !quickReminder.scheduler?.schedule)
-      return false;
-    await quickReminder.store.add(reminder);
-    quickReminder.scheduler.schedule(reminder);
-    return true;
-  }
-
-  private getQuickReminder(): QuickReminder | null {
-    const app = this.app as AppWithPlugins;
-    const plugin = app.plugins?.plugins?.["quick-reminder"];
-    return plugin && typeof plugin === "object"
-      ? (plugin as QuickReminder)
-      : null;
+    const adapter = getQuickReminderAdapter(this.app);
+    if (adapter) {
+      adapter.openManager();
+      return;
+    }
+    new Notice(
+      'KB Manager: Quick Reminder is not installed or enabled. Review tasks are written to your KB update task file.',
+    );
   }
 
   private async writeFallbackTask(
@@ -75,14 +66,14 @@ export default class KBReminder {
     dueAt: number,
   ): Promise<void> {
     const path = normalizePath(
-      this.settings.kbReviewTaskPath || "KB Updates.md",
+      this.settings.kbReviewTaskPath || 'KB Updates.md',
     );
     const line = buildReviewTaskLine(scopePath, dueAt);
     const file = this.app.vault.getAbstractFileByPath(path);
     if (file instanceof TFile) {
       await this.app.vault.process(
         file,
-        (content) => `${content.trimEnd()}\n${line}\n`,
+        content => `${content.trimEnd()}\n${line}\n`,
       );
       return;
     }
@@ -90,7 +81,7 @@ export default class KBReminder {
   }
 
   private reportError(err: unknown): void {
-    console.error("KB Manager: create update reminder failed", err);
-    new Notice("KB Manager: could not create update reminder - see console");
+    console.error('KB Manager: create update reminder failed', err);
+    new Notice('KB Manager: could not create update reminder - see console');
   }
 }

@@ -23,28 +23,28 @@ export default class NoteCapture {
 
   addCommands(plugin: Plugin): void {
     plugin.addCommand({
-      id: 'kb-manager-new-note-current-folder',
-      name: 'KB Manager: New KB note here',
+      id: 'new-note-current-folder',
+      name: 'New KB note here',
       callback: () => { this.createNoteFromPrompt(this.getActiveFolderPath()); },
     });
     plugin.addCommand({
-      id: 'kb-manager-new-moc-note-here',
-      name: 'KB Manager: New MOC note here',
+      id: 'new-moc-note-here',
+      name: 'New MOC note here',
       callback: () => { this.createNoteFromPrompt(this.getActiveFolderPath(), [], 'moc'); },
     });
     plugin.addCommand({
-      id: 'kb-manager-new-toc-note-here',
-      name: 'KB Manager: New TOC note here',
+      id: 'new-toc-note-here',
+      name: 'New TOC note here',
       callback: () => { this.createNoteFromPrompt(this.getActiveFolderPath(), [], 'toc'); },
     });
     plugin.addCommand({
-      id: 'kb-manager-add-tags-current-note',
-      name: 'KB Manager: Add tags to current note',
+      id: 'add-tags-current-note',
+      name: 'Add tags to current note',
       callback: () => { this.promptAddTagsToCurrentNote(); },
     });
     plugin.addCommand({
-      id: 'kb-manager-initialize-current-note',
-      name: 'KB Manager: Initialize properties for current note',
+      id: 'initialize-current-note',
+      name: 'Initialize properties for current note',
       callback: () => {
         this.initializeCurrentNote().catch(err => this.reportError('initialize properties', err));
       },
