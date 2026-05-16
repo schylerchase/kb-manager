@@ -64,5 +64,5 @@ export function buildDedicatedMocFile(folderPath: string, body: string): string 
     `kb-folder: ${folderPath}`,
     '---',
   ].join('\n');
-  return `${frontmatter}\n\n# MOC: ${folderLabel}\n\n${body}`;
+  return `${frontmatter}\n\n# Folder map: ${folderLabel}\n\n${body}`;
 }

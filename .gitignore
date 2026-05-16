@@ -3,3 +3,6 @@ dist/
 main.js
 *.js.map
 .DS_Store
+.env
+.env.*
+*.local

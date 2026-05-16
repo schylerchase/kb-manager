@@ -1,7 +1,7 @@
 {
   "name": "kb-manager",
   "version": "0.1.0",
-  "description": "KB Manager Obsidian Plugin",
+  "description": "MOC-first knowledge base automation for Obsidian.",
   "main": "main.js",
   "scripts": {
     "dev": "node esbuild.config.mjs",
@@ -10,16 +10,31 @@
     "test": "vitest run",
     "test:watch": "vitest"
   },
-  "keywords": [],
-  "author": "",
+  "keywords": [
+    "obsidian",
+    "obsidian-plugin",
+    "knowledge-base",
+    "moc",
+    "toc",
+    "tags"
+  ],
+  "author": "Schyler Ryan",
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/schylerchase/kb-manager.git"
+  },
+  "bugs": {
+    "url": "https://github.com/schylerchase/kb-manager/issues"
+  },
+  "homepage": "https://github.com/schylerchase/kb-manager#readme",
   "devDependencies": {
     "@types/node": "^22.0.0",
     "builtin-modules": "^3.3.0",
     "esbuild": "0.25.5",
-    "obsidian": "latest",
+    "obsidian": "^1.12.3",
     "tslib": "2.4.0",
     "typescript": "^5.8.3",
-    "vitest": "^2.1.0"
+    "vitest": "^4.1.6"
   }
 }

@@ -5,6 +5,6 @@
   "minAppVersion": "1.4.0",
   "description": "Auto-maintains MOC files, TOC sections, and tag hierarchies in your vault.",
   "author": "Schyler Ryan",
-  "authorUrl": "",
+  "authorUrl": "https://github.com/schylerchase",
   "isDesktopOnly": false
 }

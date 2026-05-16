@@ -269,7 +269,7 @@ export default class KBSidebarView extends ItemView {
 
   private createTreeRow(parent: HTMLElement, depth: number, cls: string, key = ''): HTMLElement {
     const row = parent.createDiv({ cls: `kb-row ${cls}` });
-    row.style.paddingLeft = `${depth * 12}px`;
+    row.style.setProperty('--kb-depth', String(depth));
     if (key === this.pulseKey) row.addClass('kb-row-pulse');
     return row;
   }

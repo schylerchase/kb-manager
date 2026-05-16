@@ -105,15 +105,15 @@ describe('buildDedicatedMocFile', () => {
   it('uses folder path in frontmatter and h1', () => {
     const result = buildDedicatedMocFile('notes/projects', '## api\n- [[a]]\n');
     expect(result).toContain('kb-managed: true\nkb-type: moc\nkb-folder: notes/projects');
-    expect(result).toContain('# MOC: notes/projects');
+    expect(result).toContain('# Folder map: notes/projects');
   });
 
   it('uses vault root label for root folder', () => {
-    expect(buildDedicatedMocFile('', '')).toContain('# MOC: vault root');
+    expect(buildDedicatedMocFile('', '')).toContain('# Folder map: vault root');
   });
 
   it('places body after the title', () => {
     const result = buildDedicatedMocFile('notes', '## api\n- [[a]]\n');
-    expect(result.endsWith('# MOC: notes\n\n## api\n- [[a]]\n')).toBe(true);
+    expect(result.endsWith('# Folder map: notes\n\n## api\n- [[a]]\n')).toBe(true);
   });
 });

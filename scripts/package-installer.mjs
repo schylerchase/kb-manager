@@ -1,5 +1,5 @@
 import { copyFile, mkdir, rm, chmod } from 'node:fs/promises';
-import { spawn } from 'node:child_process';
+import { spawn, spawnSync } from 'node:child_process';
 import path from 'node:path';
 
 const packageDir = path.join('dist', 'kb-manager-installer');
@@ -34,6 +34,19 @@ if (await zipPackage()) {
 }
 
 async function zipPackage() {
+  if (process.platform === 'win32') {
+    const archive = spawnSync(
+      'powershell.exe',
+      [
+        '-NoProfile',
+        '-Command',
+        'Compress-Archive -LiteralPath kb-manager-installer -DestinationPath kb-manager-installer.zip -Force',
+      ],
+      { cwd: 'dist', stdio: 'inherit' },
+    );
+    if (!archive.error && archive.status === 0) return true;
+  }
+
   return new Promise(resolve => {
     const zip = spawn('zip', ['-qr', 'kb-manager-installer.zip', 'kb-manager-installer'], { cwd: 'dist' });
     zip.on('error', () => resolve(false));

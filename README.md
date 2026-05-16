@@ -28,6 +28,20 @@ KB Manager only overwrites files or sections it owns:
 
 The plugin is intended for local vaults and does not make network calls.
 
+## Install From GitHub With BRAT
+
+For beta installs from GitHub, use [BRAT](https://github.com/TfTHacker/obsidian42-brat).
+
+1. In Obsidian, install and enable **BRAT** from Community plugins.
+2. Run **BRAT: Add a beta plugin for testing** from the command palette.
+3. Enter:
+   ```text
+   https://github.com/schylerchase/kb-manager
+   ```
+4. Enable **KB Manager** in **Settings -> Community plugins**.
+
+BRAT installs the latest GitHub release into the current vault and can check for updates later.
+
 ## Install From Installer Package
 
 Build the installer package:
@@ -125,3 +139,26 @@ npm run package:installer
 Version: `0.1.0`
 
 This is an early personal-use release. Back up important vaults before trying any plugin that writes generated content.
+
+## Release Process
+
+1. Update `version` in `manifest.json` and `package.json`.
+2. If `minAppVersion` changes, update `versions.json`.
+3. Run tests and build locally:
+   ```sh
+   npm test
+   npm run build
+   ```
+4. Push a matching tag:
+   ```sh
+   git tag v0.1.1
+   git push origin v0.1.1
+   ```
+5. GitHub Actions publishes a release containing:
+   - `main.js`
+   - `manifest.json`
+   - `versions.json`
+   - `styles.css`
+   - `kb-manager-installer.zip`
+
+Friends using BRAT can update with **BRAT: Check for updates to beta plugins and UPDATE**.
