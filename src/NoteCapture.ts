@@ -18,7 +18,12 @@ export default class NoteCapture {
   constructor(
     private app: App,
     private index: VaultIndex,
-    private tagManager: TagManager
+    private tagManager: TagManager,
+    /**
+     * Funneled rebuild trigger. Goes through the plugin's runWithLock so we
+     * never race the scheduler tick or another generator pass.
+     */
+    private requestRebuild: () => Promise<void>,
   ) {}
 
   addCommands(plugin: Plugin): void {
@@ -114,7 +119,7 @@ export default class NoteCapture {
     const path = getAvailableNotePath(normalizedFolder, title, p => this.app.vault.getAbstractFileByPath(p) !== null);
     const file = await this.app.vault.create(path, buildNewNoteContent(title, tags, new Date(), kind));
     this.index.markDirty(file.path);
-    await this.index.rebuildDirty();
+    await this.requestRebuild();
     await this.app.workspace.getLeaf(false).openFile(file);
     new Notice(`KB Manager: created ${this.kindLabel(kind)} ${sanitizeNoteTitle(title)}`);
   }
@@ -126,7 +131,7 @@ export default class NoteCapture {
       frontmatter.tags = mergeTags(frontmatter.tags, additions);
     });
     this.index.markDirty(file.path);
-    await this.index.rebuildDirty();
+    await this.requestRebuild();
     new Notice(`KB Manager: added ${this.formatTagList(additions)}`);
   }
 
@@ -135,7 +140,7 @@ export default class NoteCapture {
       initializeFrontmatter(frontmatter, new Date());
     });
     this.index.markDirty(file.path);
-    await this.index.rebuildDirty();
+    await this.requestRebuild();
     if (shouldNotify) new Notice('KB Manager: properties initialized');
   }
 
@@ -171,7 +176,15 @@ export default class NoteCapture {
       const existing = this.app.vault.getAbstractFileByPath(current);
       if (existing instanceof TFolder) continue;
       if (existing !== null) throw new Error(`Path exists and is not a folder: ${current}`);
-      await this.app.vault.createFolder(current);
+      try {
+        await this.app.vault.createFolder(current);
+      } catch (err) {
+        // Tolerate the TOCTOU race where two concurrent createNote calls both
+        // pass the existence check and both try to create. Only re-throw if
+        // the folder genuinely still does not exist after the failure.
+        const stillExists = this.app.vault.getAbstractFileByPath(current);
+        if (!(stillExists instanceof TFolder)) throw err;
+      }
     }
   }
 

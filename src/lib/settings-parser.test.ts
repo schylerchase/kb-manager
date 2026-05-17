@@ -1,5 +1,9 @@
 import { describe, it, expect } from 'vitest';
-import { parseFolderRules, parseExclusionPatterns } from './settings-parser';
+import {
+  parseFolderRules,
+  parseFolderRulesWithDiagnostics,
+  parseExclusionPatterns,
+} from './settings-parser';
 
 describe('parseFolderRules', () => {
   it('returns empty object for empty input', () => {
@@ -37,6 +41,25 @@ describe('parseFolderRules', () => {
 
   it('returns empty object for whitespace-only input', () => {
     expect(parseFolderRules('\n\n')).toStrictEqual({});
+  });
+});
+
+describe('parseFolderRulesWithDiagnostics', () => {
+  it('reports no collisions when each path is unique', () => {
+    const result = parseFolderRulesWithDiagnostics('a = inline\nb = dedicated');
+    expect(result.rules).toStrictEqual({ a: 'inline', b: 'dedicated' });
+    expect(result.collisions).toEqual([]);
+  });
+
+  it('reports collisions when the same path appears with conflicting values', () => {
+    const result = parseFolderRulesWithDiagnostics('notes = inline\nnotes = dedicated');
+    expect(result.rules).toStrictEqual({ notes: 'dedicated' }); // last wins
+    expect(result.collisions).toEqual(['notes']);
+  });
+
+  it('does not report a collision when the same path is repeated with the same value', () => {
+    const result = parseFolderRulesWithDiagnostics('a = inline\na = inline');
+    expect(result.collisions).toEqual([]);
   });
 });
 

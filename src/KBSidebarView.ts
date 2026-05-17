@@ -43,7 +43,22 @@ export default class KBSidebarView extends ItemView {
   }
 
   private render(): void {
-    const container = this.containerEl.children[1] as HTMLElement;
+    const container = this.containerEl.children[1] as HTMLElement | undefined;
+    // Bail out if the leaf was detached between when this render was queued
+    // (e.g. by a vault rebuild callback) and now.
+    if (!container || !container.isConnected) return;
+    // Drop selectedFolderPath if no indexed file lives under it (rename,
+    // delete, or exclusion change) so the tag scope doesn't show "0 tags"
+    // forever. Use prefix check so intermediate (file-less) folders that
+    // exist in the sidebar tree but not as direct index keys still count.
+    if (this.selectedFolderPath !== '') {
+      const selected = this.selectedFolderPath;
+      const prefix = `${selected}/`;
+      const stillVisible = this.plugin.index
+        .getAllFolders()
+        .some(folder => folder === selected || folder.startsWith(prefix));
+      if (!stillVisible) this.selectedFolderPath = '';
+    }
     const mocScroll = container.querySelector<HTMLElement>('.kb-section-moc')?.scrollTop ?? 0;
     const tagScroll = container.querySelector<HTMLElement>('.kb-section-tags')?.scrollTop ?? 0;
     const reviewScroll = container.querySelector<HTMLElement>('.kb-section-review')?.scrollTop ?? 0;

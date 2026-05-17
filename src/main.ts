@@ -27,21 +27,42 @@ export default class KBManagerPlugin extends Plugin {
   private rebuildLock: Promise<void> | null = null;
   private queuedManualRebuild: Promise<void> | null = null;
   private statusBarItem: HTMLElement | null = null;
+  /** Set true in onunload so deferred work (vault writes, generators) can bail. */
+  unloaded = false;
+  /**
+   * Paths whose vault.rename event fired but whose MetadataCache hasn't yet
+   * resolved at the new path. The metadataCache 'changed' listener re-marks
+   * them dirty so the next rebuildDirty picks up fresh tags/headings instead
+   * of recording empty values.
+   */
+  private metadataAwaitingRename: Set<string> = new Set();
 
   async onload(): Promise<void> {
     await this.loadSettings();
 
-    this.index = new VaultIndex(this.app, this.settings.excludedPaths);
+    // Pass a getter so the index always sees the live excludedPaths array —
+    // settings tab reassigns the field, so a cached reference goes stale.
+    this.index = new VaultIndex(this.app, () => this.settings.excludedPaths);
     this.tagManager = new TagManager(this.index);
-    this.noteCapture = new NoteCapture(this.app, this.index, this.tagManager);
+    const isUnloaded = () => this.unloaded;
+    this.noteCapture = new NoteCapture(
+      this.app,
+      this.index,
+      this.tagManager,
+      () => this.requestDirtyRebuild(),
+    );
     this.kbReminder = new KBReminder(this.app, this.settings);
-    this.mocGenerator = new MocGenerator(this.app, this.index, this.settings);
-    this.tocGenerator = new TocGenerator(this.app, this.index, this.settings);
+    this.mocGenerator = new MocGenerator(this.app, this.index, this.settings, isUnloaded);
+    this.tocGenerator = new TocGenerator(this.app, this.index, this.settings, isUnloaded);
     this.registerView(KB_SIDEBAR_VIEW_TYPE, leaf => new KBSidebarView(leaf, this));
 
     this.addSettingTab(new KBSettingsTab(this.app, this));
 
     this.app.workspace.onLayoutReady(() => {
+      // Plugin could have been disabled before layoutReady fires on a slow-
+      // loading vault. Bail so we don't register commands / start timers on
+      // a dead instance.
+      if (this.unloaded) return;
       this.statusBarItem = this.addStatusBarItem();
       this.statusBarItem.setText(this.statusText());
       this.registerVaultEvents();
@@ -50,6 +71,7 @@ export default class KBManagerPlugin extends Plugin {
       this.runWithLock(() => this.index.rebuild())
         .catch(err => console.error('KB Manager: initial rebuild failed', err))
         .finally(() => {
+          if (this.unloaded) return;
           this.startScheduler();
           this.addManualRebuildControls();
           this.addInsertCommands();
@@ -62,7 +84,29 @@ export default class KBManagerPlugin extends Plugin {
   }
 
   onunload(): void {
+    this.unloaded = true;
     this.stopScheduler();
+  }
+
+  /**
+   * Public entry for components that need a dirty-rebuild. Every call queues
+   * its own rebuild through runWithLock's FIFO so caller-side ordering is
+   * preserved: after `await requestDirtyRebuild()` the caller's prior
+   * markDirty IS reflected in the index.
+   *
+   * Duplicate calls in a burst are cheap: rebuildDirty early-exits when
+   * dirty is empty AND derivedMaps are clean, so it does not trigger a
+   * spurious onRebuildComplete / generator pass.
+   *
+   * (Coalescing via a shared in-flight promise was tried but corrupted the
+   * caller contract: a second markDirty that landed AFTER an in-flight
+   * rebuild snapshotted but BEFORE it completed would silently be coalesced
+   * onto the snapshotted rebuild — leaving the dirty path unindexed until
+   * the next scheduler tick.)
+   */
+  requestDirtyRebuild(): Promise<void> {
+    if (this.unloaded) return Promise.resolve();
+    return this.runWithLock(() => this.index.rebuildDirty());
   }
 
   async loadSettings(): Promise<void> {
@@ -125,8 +169,10 @@ export default class KBManagerPlugin extends Plugin {
   }
 
   private async runScheduledTick(): Promise<void> {
-    if (this.rebuildLock) return;
-    await this.runWithLock(() => this.index.rebuildDirty());
+    if (this.unloaded) return;
+    // Route through the same coalescing path as note-capture so we don't
+    // queue a duplicate dirty rebuild on top of an in-flight one.
+    await this.requestDirtyRebuild();
   }
 
   private async queueManualRebuild(): Promise<void> {
@@ -148,9 +194,19 @@ export default class KBManagerPlugin extends Plugin {
   }
 
   private async runWithLock(work: () => Promise<void>): Promise<void> {
-    if (this.rebuildLock) await this.awaitActiveRebuild(this.rebuildLock);
-    this.statusBarItem?.setText(STATUS_REBUILDING);
-    const current = this.runLockedWork(work);
+    // FIFO queue: chain onto the current tail so two concurrent callers
+    // serialize instead of both racing past the same await and overwriting
+    // the lock. Previous implementation used `if (rebuildLock) await ...`
+    // which let parallel callers proceed simultaneously.
+    const previous = this.rebuildLock ?? Promise.resolve();
+    const current = previous.catch(() => {}).then(async () => {
+      this.statusBarItem?.setText(STATUS_REBUILDING);
+      try {
+        await work();
+      } finally {
+        this.statusBarItem?.setText(this.statusText());
+      }
+    });
     this.rebuildLock = current;
     try {
       await current;
@@ -222,12 +278,15 @@ export default class KBManagerPlugin extends Plugin {
   }
 
   private async runGenerators(): Promise<void> {
+    if (this.unloaded) return;
     if (!this.settings.generatedWritesEnabled) {
       this.notifySidebarRefresh();
       return;
     }
     await this.mocGenerator.run();
+    if (this.unloaded) return;
     await this.tocGenerator.run();
+    if (this.unloaded) return;
     this.notifySidebarRefresh();
   }
 
@@ -301,7 +360,20 @@ export default class KBManagerPlugin extends Plugin {
     this.registerEvent(
       this.app.vault.on('rename', (file, oldPath) => {
         this.index.remove(oldPath);
-        if (file instanceof TFile) this.index.markDirty(file.path);
+        if (file instanceof TFile) {
+          this.index.markDirty(file.path);
+          // Obsidian's MetadataCache often lags behind a rename — the next
+          // rebuildDirty would index the file with empty tags/headings.
+          // Mark it as awaiting so we re-mark dirty when cache catches up.
+          this.metadataAwaitingRename.add(file.path);
+        }
+      })
+    );
+    this.registerEvent(
+      this.app.metadataCache.on('changed', (file) => {
+        if (!(file instanceof TFile)) return;
+        if (!this.metadataAwaitingRename.delete(file.path)) return;
+        this.index.markDirty(file.path);
       })
     );
     this.registerEvent(

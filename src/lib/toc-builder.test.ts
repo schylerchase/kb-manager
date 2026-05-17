@@ -46,6 +46,24 @@ describe('buildPerNoteTocBody', () => {
   it('exports max toc depth', () => {
     expect(MAX_TOC_DEPTH).toBe(3);
   });
+
+  it('sanitizes wikilink-breaking characters in heading text', () => {
+    // Headings containing [, ], |, ^, # would break wiki-link parsing:
+    // - `]` closes the link early
+    // - `|` makes the rest an alias
+    // - `^` would point at a block-ref
+    // - `#` would chain another heading-ref
+    const result = buildPerNoteTocBody('foo.md', [
+      h('Foo ]] Bar', 1),
+      h('Foo | Bar', 2),
+      h('Foo #ref', 3),
+    ]);
+    expect(result).toContain('[[foo#Foo  Bar]]');
+    expect(result).toContain('[[foo#Foo  Bar]]');
+    expect(result).toContain('[[foo#Foo ref]]');
+    expect(result).not.toContain('[[foo#Foo ]] Bar]]');
+    expect(result).not.toContain('[[foo#Foo | Bar]]');
+  });
 });
 
 describe('buildIndexFile', () => {

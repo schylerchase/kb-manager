@@ -17,11 +17,25 @@ export default class VaultIndex {
   private tagTree = new Map<string, TagNode>();
   private flatTagMap = new Map<string, string[]>();
   private dirty = new Set<string>();
+  private derivedMapsDirty = false;
 
   /** D-11: single callback fired after every rebuild() and rebuildDirty(). */
   onRebuildComplete: (() => void | Promise<void>) | null = null;
 
-  constructor(private app: App, private excludedPaths: string[]) {}
+  /**
+   * Accepts a getter so settings reactivity works: if the user edits
+   * excludedPaths in the settings tab, the next read sees the new array.
+   * Passing the array directly would cache a stale reference because the
+   * settings UI reassigns the field with `settings.excludedPaths = next`.
+   */
+  constructor(
+    private app: App,
+    private readonly getExcludedPaths: () => string[],
+  ) {}
+
+  private get excludedPaths(): string[] {
+    return this.getExcludedPaths();
+  }
 
   // --- Mutation (called from main.ts vault events) ---
 
@@ -34,8 +48,10 @@ export default class VaultIndex {
   remove(filePath: string): void {
     this.files.delete(filePath);
     this.dirty.delete(filePath);
-    // Rebuild derived maps to remove stale folder/tag entries.
-    this._rebuildDerivedMaps();
+    // Defer derived-map rebuild: a bulk delete (e.g. 500-note folder) fires
+    // 500 sequential delete events, each O(n) if we rebuild eagerly. Mark
+    // dirty and rebuild lazily before the next query.
+    this.derivedMapsDirty = true;
   }
 
   // --- Rebuild ---
@@ -49,33 +65,50 @@ export default class VaultIndex {
     this.dirty.clear();
 
     const allFiles = this.app.vault.getMarkdownFiles();
+    const excluded = this.excludedPaths;
     for (const file of allFiles) {
-      if (isExcluded(file.path, this.excludedPaths)) continue;
+      if (isExcluded(file.path, excluded)) continue;
       this._indexFile(file);
     }
     this._rebuildDerivedMaps();
+    this.derivedMapsDirty = false;
     await this.onRebuildComplete?.();
   }
 
   /**
    * D-09: re-index only dirty files, keep clean FileRecords in place,
    * then clear the dirty set. Called by Phase 3 scheduler on each tick.
+   *
+   * Also fires onRebuildComplete when only derived maps are stale (e.g. a
+   * delete event came in but no file modifications), so generators reflect
+   * removed files.
    */
   async rebuildDirty(): Promise<void> {
-    if (this.dirty.size === 0) return;
-    const dirtyPaths = new Set(this.dirty);
-    this.dirty.clear();
+    if (this.dirty.size === 0 && !this.derivedMapsDirty) return;
 
-    for (const filePath of dirtyPaths) {
-      const file = this.app.vault.getAbstractFileByPath(filePath);
-      if (file instanceof TFile) {
-        this._indexFile(file);
-      } else {
-        // File deleted or moved — remove stale record.
-        this.files.delete(filePath);
+    if (this.dirty.size > 0) {
+      const dirtyPaths = new Set(this.dirty);
+      this.dirty.clear();
+      const excluded = this.excludedPaths;
+
+      for (const filePath of dirtyPaths) {
+        const file = this.app.vault.getAbstractFileByPath(filePath);
+        if (file instanceof TFile) {
+          // Re-check exclusion on every dirty path: a file may have become
+          // excluded (or un-excluded) since it was last indexed.
+          if (isExcluded(filePath, excluded)) {
+            this.files.delete(filePath);
+          } else {
+            this._indexFile(file);
+          }
+        } else {
+          // File deleted or moved — remove stale record.
+          this.files.delete(filePath);
+        }
       }
     }
     this._rebuildDerivedMaps();
+    this.derivedMapsDirty = false;
     await this.onRebuildComplete?.();
   }
 
@@ -83,6 +116,7 @@ export default class VaultIndex {
 
   /** O(1) lookup of all FileRecords in a folder. D-03. */
   getFilesInFolder(folderPath: string): FileRecord[] {
+    this.ensureFreshDerivedMaps();
     const folder = this.folders.get(folderPath);
     if (!folder) return [];
     return folder.files
@@ -92,6 +126,7 @@ export default class VaultIndex {
 
   /** O(1) lookup of file paths with an exact (normalized) tag. D-05. */
   getFilesWithTag(tag: string): string[] {
+    this.ensureFreshDerivedMaps();
     return this.flatTagMap.get(tag) ?? [];
   }
 
@@ -102,6 +137,7 @@ export default class VaultIndex {
 
   /** All folder paths currently indexed. */
   getAllFolders(): string[] {
+    this.ensureFreshDerivedMaps();
     return Array.from(this.folders.keys());
   }
 
@@ -112,12 +148,19 @@ export default class VaultIndex {
 
   /** Raw tag hierarchy tree. D-04/D-06. */
   getTagTree(): Map<string, TagNode> {
+    this.ensureFreshDerivedMaps();
     return this.tagTree;
   }
 
   /** True if filePath is in the dirty set. D-07/D-09. */
   isDirty(filePath: string): boolean {
     return this.dirty.has(filePath);
+  }
+
+  private ensureFreshDerivedMaps(): void {
+    if (!this.derivedMapsDirty) return;
+    this._rebuildDerivedMaps();
+    this.derivedMapsDirty = false;
   }
 
   // --- Private helpers ---

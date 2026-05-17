@@ -1,5 +1,6 @@
-import { App, PluginSettingTab, Setting } from 'obsidian';
-import { parseFolderRules, parseExclusionPatterns } from 'lib/settings-parser';
+import { App, Notice, PluginSettingTab, Setting } from 'obsidian';
+import { DebouncedRebuild } from 'lib/debounced-rebuild';
+import { parseFolderRulesWithDiagnostics, parseExclusionPatterns } from 'lib/settings-parser';
 
 export interface KBManagerSettings {
   generatedWritesEnabled: boolean;
@@ -33,8 +34,14 @@ type SettingsHost = {
 };
 
 export class KBSettingsTab extends PluginSettingTab {
+  private formatRebuild: DebouncedRebuild;
+
   constructor(app: App, private plugin: SettingsHost) {
     super(app, plugin as never);
+    this.formatRebuild = new DebouncedRebuild(
+      () => this.plugin.runManualRebuild(),
+      err => console.error('KB Manager: format-change rebuild failed', err),
+    );
   }
 
   display(): void {
@@ -44,6 +51,21 @@ export class KBSettingsTab extends PluginSettingTab {
     this.buildGeneralSection(containerEl);
     this.buildExclusionsSection(containerEl);
     this.buildMocFormatSection(containerEl);
+  }
+
+  hide(): void {
+    this.formatRebuild.flush();
+  }
+
+  /**
+   * Debounced rebuild trigger for MOC format / rule edits. Textarea typing
+   * fires onChange per keystroke, so we coalesce into one rebuild ~600ms
+   * after the user stops typing. Without this, generated MOC/INDEX output
+   * stays in the old format until the user manually rebuilds or edits a
+   * note (no dirty paths → scheduler tick early-exits).
+   */
+  private scheduleFormatRebuild(): void {
+    this.formatRebuild.schedule();
   }
 
   private buildGeneralSection(containerEl: HTMLElement): void {
@@ -159,7 +181,14 @@ export class KBSettingsTab extends PluginSettingTab {
           .setValue(this.plugin.settings.excludedPaths.join('\n'))
           .onChange(async v => {
             this.plugin.settings.excludedPaths = parseExclusionPatterns(v);
-            try { await this.plugin.saveSettings(); } catch (err) { console.error('KB Manager: failed to save settings', err); }
+            try {
+              await this.plugin.saveSettings();
+              // Trigger a full rebuild so newly-excluded files are dropped
+              // from the index (rebuildDirty only touches modified paths).
+              await this.plugin.runManualRebuild();
+            } catch (err) {
+              console.error('KB Manager: failed to save settings', err);
+            }
           })
       );
   }
@@ -180,7 +209,10 @@ export class KBSettingsTab extends PluginSettingTab {
           .onChange(async v => {
             if (v !== 'dedicated' && v !== 'inline') return;
             this.plugin.settings.defaultMocFormat = v;
-            try { await this.plugin.saveSettings(); } catch (err) { console.error('KB Manager: failed to save settings', err); }
+            try {
+              await this.plugin.saveSettings();
+              this.scheduleFormatRebuild();
+            } catch (err) { console.error('KB Manager: failed to save settings', err); }
           })
       );
 
@@ -198,8 +230,18 @@ export class KBSettingsTab extends PluginSettingTab {
               .join('\n')
           )
           .onChange(async v => {
-            this.plugin.settings.folderRules = parseFolderRules(v);
-            try { await this.plugin.saveSettings(); } catch (err) { console.error('KB Manager: failed to save settings', err); }
+            const { rules, collisions } = parseFolderRulesWithDiagnostics(v);
+            this.plugin.settings.folderRules = rules;
+            try {
+              await this.plugin.saveSettings();
+              this.scheduleFormatRebuild();
+              if (collisions.length > 0) {
+                new Notice(
+                  `KB Manager: duplicate folder rule(s) — last value wins for: ${collisions.join(', ')}`,
+                  8000,
+                );
+              }
+            } catch (err) { console.error('KB Manager: failed to save settings', err); }
           })
       );
   }

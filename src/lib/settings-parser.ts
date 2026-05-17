@@ -6,8 +6,24 @@
 export function parseFolderRules(
   text: string
 ): Record<string, 'dedicated' | 'inline'> {
+  return parseFolderRulesWithDiagnostics(text).rules;
+}
+
+export interface FolderRuleParseResult {
+  rules: Record<string, 'dedicated' | 'inline'>;
+  /** Paths that appeared more than once with conflicting values; last wins. */
+  collisions: string[];
+}
+
+/**
+ * Diagnostic variant returning both the parsed rules and any duplicate-key
+ * collisions so callers (e.g. settings UI) can surface them to the user
+ * instead of silently dropping rules.
+ */
+export function parseFolderRulesWithDiagnostics(text: string): FolderRuleParseResult {
   const result: Record<string, 'dedicated' | 'inline'> = {};
-  if (!text.trim()) return result;
+  const collisions = new Set<string>();
+  if (!text.trim()) return { rules: result, collisions: [] };
   for (const raw of text.split('\n')) {
     const line = raw.trim();
     if (!line) continue;
@@ -18,9 +34,13 @@ export function parseFolderRules(
     if (!rawPath || !rawValue) continue;
     const path = rawPath.trim();
     const value = rawValue as 'dedicated' | 'inline';
-    if (path) result[path] = value;
+    if (!path) continue;
+    if (path in result && result[path] !== value) {
+      collisions.add(path);
+    }
+    result[path] = value;
   }
-  return result;
+  return { rules: result, collisions: [...collisions] };
 }
 
 /**

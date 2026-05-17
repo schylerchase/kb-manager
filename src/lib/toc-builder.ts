@@ -19,6 +19,19 @@ function basename(filePath: string): string {
   return tail.endsWith('.md') ? tail.slice(0, -3) : tail;
 }
 
+/**
+ * Strip characters that have special meaning inside `[[wikilinks]]` so the
+ * emitted link parses as `[[Note#heading]]`, not as a broken link with a
+ * stray alias or premature `]]` close.
+ *  - `[` and `]` close the link early
+ *  - `|` makes the rest an alias
+ *  - `^` would point at a block-ref the heading isn't
+ *  - `#` would chain another heading-ref
+ */
+function sanitizeLinkText(text: string): string {
+  return text.replace(/[\[\]|^#]/g, '').trim();
+}
+
 function sortByBasename<T extends { filePath: string }>(items: T[]): T[] {
   return [...items].sort((a, b) =>
     basename(a.filePath).toLowerCase().localeCompare(basename(b.filePath).toLowerCase())
@@ -30,7 +43,7 @@ export function buildPerNoteTocBody(filePath: string, headings: HeadingRecord[])
   if (filtered.length === 0) return PLACEHOLDER_NO_HEADINGS;
   const note = basename(filePath);
   const links = filtered
-    .map(h => `${'  '.repeat(h.level - 1)}- [[${note}#${h.text}]]`)
+    .map(h => `${'  '.repeat(h.level - 1)}- [[${note}#${sanitizeLinkText(h.text)}]]`)
     .join('\n');
   return `${PER_NOTE_TOC_INTRO}\n\n${links}`;
 }
@@ -56,6 +69,6 @@ function buildNoteSection(note: { filePath: string; headings: HeadingRecord[] })
   const h1s = note.headings.filter(h => h.level === 1);
   const body = h1s.length === 0
     ? PLACEHOLDER_NO_H1
-    : h1s.map(h => `- [[${noteName}#${h.text}]]`).join('\n');
+    : h1s.map(h => `- [[${noteName}#${sanitizeLinkText(h.text)}]]`).join('\n');
   return `### ${noteName}\n${body}`;
 }

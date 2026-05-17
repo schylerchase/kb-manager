@@ -12,20 +12,70 @@ export default class MocGenerator {
   constructor(
     private app: App,
     private index: VaultIndex,
-    private settings: KBManagerSettings
+    private settings: KBManagerSettings,
+    /** Bails out between folder iterations once the plugin is disabled. */
+    private isUnloaded: () => boolean = () => false,
   ) {}
 
   async run(): Promise<void> {
     for (const folderPath of this.index.getAllFolders()) {
+      if (this.isUnloaded()) return;
       if (isExcluded(folderPath, this.settings.excludedPaths)) continue;
       const body = buildMocBody(this.buildInputForFolder(folderPath));
       if (this.resolveFormat(folderPath) === 'dedicated') {
         await this.writeDedicated(folderPath, body);
+        if (this.isUnloaded()) return;
         await this.injectInline(folderPath, body, false);
       } else {
         await this.injectInline(folderPath, body, true);
       }
     }
+    // Full-vault orphan sweep: catches MOC.md left behind in folders that
+    // became empty, became excluded, or had their format flipped to inline.
+    // The per-folder check missed these because such folders are no longer
+    // in `index.getAllFolders()`.
+    if (this.isUnloaded()) return;
+    await this.removeOrphanedDedicatedMocs();
+  }
+
+  private async removeOrphanedDedicatedMocs(): Promise<void> {
+    const mocFiles = this.app.vault
+      .getMarkdownFiles()
+      .filter(f => f.name === MOC_BASENAME);
+    for (const file of mocFiles) {
+      if (this.isUnloaded()) return;
+      if (!this.isKbManaged(file)) continue;
+      const folderPath = this.folderPathOf(file);
+      const excluded = isExcluded(folderPath, this.settings.excludedPaths);
+      const wantsDedicated = this.resolveFormat(folderPath) === 'dedicated';
+      // Folder must still contain at least one USER note (non-managed,
+      // non-MOC.md). Without this check the generated MOC.md itself keeps
+      // its own folder "alive" in the index and the orphan check never
+      // triggers when all real notes have been deleted.
+      const hasUserContent = this.folderHasUserContent(folderPath, file.path);
+      const shouldKeep = hasUserContent && !excluded && wantsDedicated;
+      if (shouldKeep) continue;
+      try {
+        await this.app.vault.trash(file, true);
+      } catch (err) {
+        console.warn(`KB Manager: failed to trash orphan MOC ${file.path}`, err);
+      }
+    }
+  }
+
+  private folderHasUserContent(folderPath: string, mocPath: string): boolean {
+    return this.index.getFilesInFolder(folderPath).some(record => {
+      if (record.path === mocPath) return false;
+      const file = this.app.vault.getAbstractFileByPath(record.path);
+      if (!(file instanceof TFile)) return false;
+      if (file.name === MOC_BASENAME) return false;
+      return !this.isKbManaged(file);
+    });
+  }
+
+  private folderPathOf(file: TFile): string {
+    const parentPath = file.parent?.path ?? '';
+    return parentPath === '/' ? '' : parentPath;
   }
 
   private resolveFormat(folderPath: string): 'dedicated' | 'inline' {

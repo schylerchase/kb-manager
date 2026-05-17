@@ -10,7 +10,11 @@ export interface ReminderDraft {
 const DAY_MS = 24 * 60 * 60 * 1000;
 
 export function getReviewDueAt(daysFromNow: number, now: Date): number {
-  return now.getTime() + Math.max(1, daysFromNow) * DAY_MS;
+  // Guard NaN/Infinity from corrupted settings so dueAt is always a finite
+  // timestamp — otherwise downstream setTimeout(NaN) fires immediately and
+  // markdown task lines show "due Invalid Date".
+  const days = Number.isFinite(daysFromNow) ? Math.max(1, daysFromNow) : 1;
+  return now.getTime() + days * DAY_MS;
 }
 
 export function buildReviewReminderText(scopePath: string): string {
