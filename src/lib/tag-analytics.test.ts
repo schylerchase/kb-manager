@@ -79,17 +79,17 @@ describe('findCleanupCandidates', () => {
 
   it('flags a 1-note tag only when a near-duplicate sibling exists', () => {
     const map = fakeMap([
-      ['claude', ['a.md', 'b.md']],
-      ['claudo', ['c.md']],
+      ['alpha', ['a.md', 'b.md']],
+      ['alpho', ['c.md']],
     ]);
     const candidates = findCleanupCandidates({ flatTagMap: map }, { maxDistance: 3 });
-    expect(candidates.some((c) => c.kind === 'orphan' && c.tag === 'claudo')).toBe(true);
+    expect(candidates.some((c) => c.kind === 'orphan' && c.tag === 'alpho')).toBe(true);
   });
 
   it('flags near-duplicate pairs', () => {
     const map = fakeMap([
-      ['claude', ['a.md', 'b.md']],
-      ['claudenotes', ['c.md']],
+      ['alpha', ['a.md', 'b.md']],
+      ['alphanotes', ['c.md']],
       ['unrelated', ['d.md']],
     ]);
     const candidates = findCleanupCandidates({ flatTagMap: map }, { maxDistance: 5 });
@@ -108,8 +108,8 @@ describe('findCleanupCandidates', () => {
 
   it('orphans rank ahead of near-duplicate pairs', () => {
     const map = fakeMap([
-      ['claude', ['b.md', 'c.md']],
-      ['claudo', ['a.md']],  // 1-note tag near-duplicate of `claude`
+      ['alpha', ['b.md', 'c.md']],
+      ['alpho', ['a.md']],  // 1-note tag near-duplicate of `alpha`
     ]);
     const candidates = findCleanupCandidates({ flatTagMap: map }, { maxDistance: 3 });
     expect(candidates[0]!.kind).toBe('orphan');
