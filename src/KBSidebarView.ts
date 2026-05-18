@@ -1,4 +1,4 @@
-import { ItemView, Notice, TFile, WorkspaceLeaf, normalizePath, setIcon } from 'obsidian';
+import { ItemView, Menu, Notice, TFile, WorkspaceLeaf, normalizePath, setIcon } from 'obsidian';
 import type KBManagerPlugin from './main';
 import { FileEntry, FolderTreeNode, TagTreeViewNode, buildFolderTree, buildScopedTagHierarchy, buildTagViewTree, countFilesInFolderScope, countPathsInFolderScope, isFileInFolderScope } from './lib/sidebar-data';
 import { isExcluded } from './lib/exclusions';
@@ -7,7 +7,7 @@ import { addNewNoteAction, addTagNoteActions, getFilesNeedingTags, renderNeedsTa
 
 export const KB_SIDEBAR_VIEW_TYPE = 'kb-manager-sidebar';
 
-type SidebarTab = 'browse' | 'review';
+type SidebarTab = 'browse' | 'tags' | 'review';
 
 type AppWithSearch = {
   internalPlugins?: { getPluginById(id: string): { instance?: { openGlobalSearch?(query: string): void } } | null };
@@ -30,16 +30,52 @@ export default class KBSidebarView extends ItemView {
   getDisplayText(): string { return 'KB Manager'; }
   getIcon(): string { return 'network'; }
 
+  /**
+   * Deferred-render timer handles. Tracked so onClose can cancel pending
+   * retries — without this, a closed-then-reopened view could fire a
+   * stale render that paints into a detached container.
+   */
+  private deferredRenderHandles: number[] = [];
+
   async onOpen(): Promise<void> {
     this.render();
     this.refreshCallback = () => this.render();
     this.plugin.sidebarRefreshCallbacks.add(this.refreshCallback);
+    // Obsidian sometimes invokes onOpen BEFORE the leaf's containerEl is
+    // attached to the DOM — most reliably reproducible after a plugin
+    // toggle-off-then-on while a sidebar leaf was open. render() bails on
+    // !container.isConnected and only retriggers via a rebuild-complete
+    // notification, so if no rebuild fires (or it fires too early) the
+    // sidebar stays blank until the user manually triggers one.
+    //
+    // Schedule a small ladder of deferred renders so the view paints once
+    // the container becomes connected, with no dependency on rebuild
+    // timing. Each retry is cheap: render() short-circuits when the leaf
+    // is still detached, and when it's connected the result is idempotent.
+    this.scheduleDeferredRenders();
   }
 
   async onClose(): Promise<void> {
+    for (const handle of this.deferredRenderHandles) window.clearTimeout(handle);
+    this.deferredRenderHandles = [];
     if (!this.refreshCallback) return;
     this.plugin.sidebarRefreshCallbacks.delete(this.refreshCallback);
     this.refreshCallback = null;
+  }
+
+  private scheduleDeferredRenders(): void {
+    // Ladder covers: next animation frame (16ms), post-layout (100ms),
+    // and a slow-mobile fallback (500ms). After ~500ms a still-blank
+    // sidebar is almost certainly a real "view never attached" case that
+    // no retry can fix.
+    const delays = [16, 100, 500];
+    for (const delay of delays) {
+      const handle = window.setTimeout(() => {
+        if (!this.refreshCallback) return;
+        this.render();
+      }, delay);
+      this.deferredRenderHandles.push(handle);
+    }
   }
 
   private render(): void {
@@ -67,7 +103,9 @@ export default class KBSidebarView extends ItemView {
     this.renderTabs(container);
     if (this.activeTab === 'browse') {
       this.renderMocSection(container);
+    } else if (this.activeTab === 'tags') {
       this.renderTagsSection(container);
+      this.renderTagCleanupSection(container);
     } else {
       this.renderReviewSection(container);
     }
@@ -81,6 +119,7 @@ export default class KBSidebarView extends ItemView {
   private renderTabs(parent: HTMLElement): void {
     const tabs = parent.createDiv({ cls: 'kb-tabs' });
     this.renderTab(tabs, 'browse', 'Browse');
+    this.renderTab(tabs, 'tags', 'Tags');
     this.renderTab(tabs, 'review', 'Review');
   }
 
@@ -160,9 +199,52 @@ export default class KBSidebarView extends ItemView {
     section.createEl('h3', { text: 'Tags', cls: 'kb-section-header' });
     const noteCount = countFilesInFolderScope(files, this.selectedFolderPath);
     renderTagScope(section, { label: this.selectedFolderPath || folder, noteCount, tagCount: tree.length, canClear: this.selectedFolderPath !== '', clear: () => this.toggleFolder('') });
+    this.renderTagManagementToolbar(section);
     if (tree.length === 0) { section.createEl('p', { cls: 'kb-empty', text: this.selectedFolderPath === '' ? 'No tags found' : 'No tags in this folder' }); return; }
     const list = section.createDiv({ cls: 'kb-tree' });
     for (const node of tree) this.renderTagNode(list, node, 0);
+  }
+
+  /**
+   * Visible toolbar above the tag tree with global tag-management actions.
+   * Big touch-friendly targets (iPad first) so users never need long-press
+   * or right-click to discover rename/bulk/cleanse/rules. Per-tag actions
+   * still live in the row's `more` icon and right-click menu.
+   */
+  private renderTagManagementToolbar(parent: HTMLElement): void {
+    const toolbar = parent.createDiv({ cls: 'kb-tag-toolbar' });
+    this.renderToolbarButton(toolbar, 'pencil', 'Rename', () => {
+      const tags = [...this.plugin.index.getTagTree().keys()].sort();
+      if (tags.length === 0) { new Notice('No tags to rename.'); return; }
+      this.plugin.openTagPicker('Pick a tag to rename', tags, (tag) => {
+        void this.plugin.renameTagWithConfirm(tag);
+      });
+    });
+    this.renderToolbarButton(toolbar, 'git-merge', 'Merge', () => {
+      const tags = [...this.plugin.index.getTagTree().keys()].sort();
+      if (tags.length === 0) { new Notice('No tags to merge.'); return; }
+      this.plugin.openTagPicker('Pick the source tag to merge', tags, (tag) => {
+        void this.plugin.mergeTagWithConfirm(tag);
+      });
+    });
+    this.renderToolbarButton(toolbar, 'list-tree', 'Bulk', () => {
+      this.plugin.openBulkTagModalPublic();
+    });
+    this.renderToolbarButton(toolbar, 'wand-sparkles', 'Cleanse', () => {
+      void this.plugin.cleanseInvalidTagsWithConfirm();
+    });
+    this.renderToolbarButton(toolbar, 'settings', 'Rules', () => {
+      this.plugin.openTagRulesSettings();
+    });
+  }
+
+  private renderToolbarButton(parent: HTMLElement, icon: string, label: string, activate: () => void): void {
+    const btn = parent.createEl('button', { cls: 'kb-tag-toolbar-btn' });
+    btn.setAttribute('aria-label', label);
+    const iconEl = btn.createSpan({ cls: 'kb-tag-toolbar-btn-icon' });
+    setIcon(iconEl, icon);
+    btn.createSpan({ cls: 'kb-tag-toolbar-btn-label', text: label });
+    btn.addEventListener('click', () => activate());
   }
 
   private renderReviewSection(parent: HTMLElement): void {
@@ -174,6 +256,80 @@ export default class KBSidebarView extends ItemView {
     this.renderReviewActions(section);
     if (needsTags.length > 0) this.renderNeedsTagsSection(section, needsTags);
     else section.createEl('p', { cls: 'kb-empty', text: 'No untagged notes in scope' });
+  }
+
+  /**
+   * Tag cleanup panel rendered inside its own section in the Tags tab.
+   * Previously lived under Review; relocated so all tag-management
+   * surfaces are in one place.
+   */
+  private renderTagCleanupSection(parent: HTMLElement): void {
+    const section = parent.createDiv({ cls: 'kb-section kb-section-tag-cleanup' });
+    section.createEl('h3', { text: 'Cleanup', cls: 'kb-section-header' });
+    section.createEl('p', {
+      cls: 'kb-section-intro',
+      text:
+        'Tags that may need attention: only used on 1 note (often typos or stale), ' +
+        'or look almost identical to another tag. Rename or delete from here.',
+    });
+    this.renderTagCleanupPanel(section);
+  }
+
+  private renderTagCleanupPanel(parent: HTMLElement): void {
+    const candidates = this.plugin.getTagCleanupCandidates();
+    if (candidates.length === 0) {
+      parent.createEl('p', { cls: 'kb-empty', text: 'No cleanup candidates' });
+      return;
+    }
+    const list = parent.createDiv({ cls: 'kb-tag-cleanup-list' });
+    for (const candidate of candidates) {
+      if (candidate.kind === 'orphan') this.renderOrphanCandidate(list, candidate);
+      else this.renderDuplicateCandidate(list, candidate);
+    }
+  }
+
+  private renderOrphanCandidate(parent: HTMLElement, candidate: { kind: 'orphan'; tag: string; noteCount: number }): void {
+    const row = parent.createDiv({ cls: 'kb-cleanup-row kb-cleanup-orphan' });
+    const text = row.createDiv({ cls: 'kb-cleanup-text' });
+    text.createSpan({ cls: 'kb-cleanup-label', text: `#${candidate.tag}` });
+    text.createSpan({ cls: 'kb-cleanup-meta', text: 'Used in 1 note' });
+    const actions = row.createDiv({ cls: 'kb-cleanup-actions' });
+    this.renderCleanupActionButton(actions, 'pencil', 'Rename', () => this.plugin.renameTagWithConfirm(candidate.tag));
+    this.renderCleanupActionButton(actions, 'trash-2', 'Delete', () => this.plugin.deleteTagEverywhereWithConfirm(candidate.tag));
+  }
+
+  private renderDuplicateCandidate(parent: HTMLElement, candidate: { kind: 'near-duplicate'; tags: string[]; noteCounts: number[]; distance: number }): void {
+    const row = parent.createDiv({ cls: 'kb-cleanup-row kb-cleanup-duplicate' });
+    const text = row.createDiv({ cls: 'kb-cleanup-text' });
+    text.createSpan({
+      cls: 'kb-cleanup-label',
+      text: `#${candidate.tags[0]} ↔ #${candidate.tags[1]}`,
+    });
+    text.createSpan({
+      cls: 'kb-cleanup-meta',
+      text: `Looks like a duplicate (${candidate.noteCounts[0]} vs ${candidate.noteCounts[1]} notes)`,
+    });
+    const actions = row.createDiv({ cls: 'kb-cleanup-actions' });
+    // Default merge direction: smaller-count → larger-count.
+    const [keepCount, dropCount] = candidate.noteCounts;
+    const keepIdx = keepCount! >= dropCount! ? 0 : 1;
+    const dropIdx = 1 - keepIdx;
+    const keepTag = candidate.tags[keepIdx]!;
+    const dropTag = candidate.tags[dropIdx]!;
+    this.renderCleanupActionButton(actions, 'git-merge', `Merge into #${keepTag}`, async () => {
+      // Use renameTag semantics: drop → keep
+      await this.plugin.mergeTagsDirectly(dropTag, keepTag);
+    });
+  }
+
+  private renderCleanupActionButton(parent: HTMLElement, icon: string, label: string, activate: () => void | Promise<void>): void {
+    const btn = parent.createEl('button', { cls: 'kb-cleanup-action-btn' });
+    const iconEl = btn.createSpan({ cls: 'kb-action-button-icon' });
+    setIcon(iconEl, icon);
+    btn.createSpan({ text: label });
+    btn.addEventListener('click', () => {
+      void activate();
+    });
   }
 
   private renderReviewSummary(parent: HTMLElement, needsTagsCount: number): void {
@@ -215,13 +371,18 @@ export default class KBSidebarView extends ItemView {
     row.setAttribute('tabindex', '0');
     row.setAttribute('aria-label', `Show notes tagged #${node.fullPath}`);
     row.setAttribute('aria-expanded', String(isShowingFiles));
-    row.setAttribute('title', `Show notes tagged #${node.fullPath}`);
     if (isShowingFiles) row.addClass('is-active');
     this.addTwirl(row, hasChildren, isExpanded, () => this.toggleTag(node.fullPath));
     row.createSpan({ cls: 'kb-label-tag', text: `#${node.name}` });
     row.createSpan({ cls: 'kb-tag-count', text: String(taggedFiles.length) });
     addTagNoteActions(row, this.addRowAction.bind(this), this.plugin, this.selectedFolderPath, node.fullPath);
     this.addTagSearchAction(row, node.fullPath);
+    // Visible "more" icon — opens the same menu as right-click. Critical on
+    // touch (iPad) where right-click via long-press isn't discoverable.
+    this.addRowAction(row, 'kb-tag-more', 'more-horizontal', `More tag actions for #${node.fullPath}`, (event) => {
+      this.showTagActionMenu(node.fullPath, event);
+    });
+    this.addTagContextMenu(row, node.fullPath);
     row.addEventListener('click', () => this.toggleTagResults(node.fullPath));
     this.addKeyboardActivation(row, () => this.toggleTagResults(node.fullPath));
     if (isShowingFiles) this.renderTagFiles(parent, taggedFiles, depth + 1);
@@ -232,6 +393,89 @@ export default class KBSidebarView extends ItemView {
 
   private addTagSearchAction(row: HTMLElement, fullPath: string): void {
     this.addRowAction(row, 'kb-tag-search', 'search', `Search for #${fullPath}`, () => this.openTagSearch(fullPath));
+  }
+
+  private addTagContextMenu(row: HTMLElement, fullPath: string): void {
+    row.addEventListener('contextmenu', (event) => {
+      event.preventDefault();
+      this.showTagActionMenu(fullPath, event);
+    });
+  }
+
+  private showTagActionMenu(fullPath: string, event: MouseEvent): void {
+    const menu = this.buildTagActionMenu(fullPath);
+    menu.showAtMouseEvent(event);
+  }
+
+  private buildTagActionMenu(fullPath: string): Menu {
+    const menu = new Menu();
+    menu.addItem((item) =>
+      item
+        .setTitle(`Search for #${fullPath}`)
+        .setIcon('search')
+        .onClick(() => this.openTagSearch(fullPath)),
+    );
+    menu.addItem((item) =>
+      item
+        .setTitle('Add to current note')
+        .setIcon('tag')
+        .onClick(() => {
+          this.plugin
+            .addTagsToCurrentNote([fullPath])
+            .catch((err) => console.error('KB Manager: add tag failed', err));
+        }),
+    );
+    menu.addItem((item) =>
+      item
+        .setTitle('Remove from current note')
+        .setIcon('circle-minus')
+        .onClick(() => {
+          this.plugin
+            .removeTagFromCurrentNote(fullPath)
+            .catch((err) => console.error('KB Manager: remove tag failed', err));
+        }),
+    );
+    menu.addSeparator();
+    menu.addItem((item) =>
+      item
+        .setTitle('Rename tag…')
+        .setIcon('pencil')
+        .onClick(() => {
+          void this.plugin.renameTagWithConfirm(fullPath);
+        }),
+    );
+    menu.addItem((item) =>
+      item
+        .setTitle('Merge tag into…')
+        .setIcon('git-merge')
+        .onClick(() => {
+          void this.plugin.mergeTagWithConfirm(fullPath);
+        }),
+    );
+    menu.addItem((item) =>
+      item
+        .setTitle('Show stats…')
+        .setIcon('bar-chart-3')
+        .onClick(() => {
+          const stats = this.plugin.buildTagStatsForMenu(fullPath);
+          if (!stats) {
+            new Notice(`No notes use #${fullPath}.`);
+            return;
+          }
+          stats.open();
+        }),
+    );
+    menu.addSeparator();
+    menu.addItem((item) =>
+      item
+        .setTitle('Delete tag everywhere…')
+        .setIcon('trash-2')
+        .setWarning(true)
+        .onClick(() => {
+          void this.plugin.deleteTagEverywhereWithConfirm(fullPath);
+        }),
+    );
+    return menu;
   }
 
   private renderTagFiles(parent: HTMLElement, files: Array<{ path: string; basename: string }>, depth: number): void {
@@ -294,7 +538,6 @@ export default class KBSidebarView extends ItemView {
     row.setAttribute('tabindex', '0');
     row.setAttribute('aria-expanded', String(isExpanded));
     row.setAttribute('aria-label', `Browse ${node.name || 'Vault'}`);
-    row.setAttribute('title', `Show tags in ${node.name || 'Vault'}`);
     row.addEventListener('click', () => this.toggleFolder(node.path));
     this.addKeyboardActivation(row, () => this.toggleFolder(node.path));
   }
@@ -303,18 +546,20 @@ export default class KBSidebarView extends ItemView {
     this.addRowAction(row, 'kb-folder-open', 'file-text', 'Open folder MOC', () => this.openMocForFolder(folderPath));
   }
 
-  private addRowAction(row: HTMLElement, cls: string, icon: string, label: string, activate: () => void): void {
+  private addRowAction(row: HTMLElement, cls: string, icon: string, label: string, activate: (event: MouseEvent) => void): void {
     const action = row.createSpan({ cls: `kb-row-action ${cls}` });
     setIcon(action, icon);
     action.setAttribute('role', 'button');
     action.setAttribute('tabindex', '0');
+    // aria-label drives both screen readers AND Obsidian's tooltip overlay.
+    // Setting `title` in addition causes the browser's native tooltip to
+    // stack on top of Obsidian's — visible as overlapping pills on hover.
     action.setAttribute('aria-label', label);
-    action.setAttribute('title', label);
     action.addEventListener('click', event => {
       event.stopPropagation();
-      activate();
+      activate(event);
     });
-    this.addKeyboardActivation(action, activate);
+    this.addKeyboardActivation(action, () => activate(new MouseEvent('click')));
   }
 
   private addTwirl(row: HTMLElement, hasChildren: boolean, isExpanded: boolean, toggle: () => void): void {

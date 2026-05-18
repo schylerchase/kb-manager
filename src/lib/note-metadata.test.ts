@@ -6,6 +6,7 @@ import {
   initializeFrontmatter,
   mergeTags,
   normalizeNoteFolderPath,
+  normalizeNoteTag,
   parseNoteTags,
   sanitizeNoteTitle,
 } from './note-metadata';
@@ -73,5 +74,67 @@ describe('note metadata helpers', () => {
       created: '2026-04-30',
       topic: 'mcp',
     });
+  });
+});
+
+describe('normalizeNoteTag cleansing', () => {
+  it('keeps already-valid tags unchanged', () => {
+    expect(normalizeNoteTag('mcp')).toBe('mcp');
+    expect(normalizeNoteTag('active-directory')).toBe('active-directory');
+    expect(normalizeNoteTag('a/b/c')).toBe('a/b/c');
+  });
+
+  it('strips the leading hash and lowercases', () => {
+    expect(normalizeNoteTag('#Foo')).toBe('foo');
+    expect(normalizeNoteTag('  #MCP/Goals  ')).toBe('mcp/goals');
+  });
+
+  it('replaces invalid characters (period, dot, special) with dashes', () => {
+    expect(normalizeNoteTag('802.1x')).toBe('802-1x');
+    expect(normalizeNoteTag('hello.world')).toBe('hello-world');
+    expect(normalizeNoteTag('a@b')).toBe('a-b');
+  });
+
+  it('collapses consecutive dashes and slashes', () => {
+    expect(normalizeNoteTag('foo--bar')).toBe('foo-bar');
+    expect(normalizeNoteTag('foo///bar')).toBe('foo/bar');
+    expect(normalizeNoteTag('foo...bar')).toBe('foo-bar');
+  });
+
+  it('strips leading/trailing dashes per segment', () => {
+    expect(normalizeNoteTag('-foo-')).toBe('foo');
+    expect(normalizeNoteTag('a/-b-/c')).toBe('a/b/c');
+  });
+
+  it('strips leading/trailing slashes', () => {
+    expect(normalizeNoteTag('/foo/')).toBe('foo');
+  });
+
+  it('rejects tags where any segment is purely numeric', () => {
+    expect(normalizeNoteTag('123')).toBe('');
+    expect(normalizeNoteTag('802')).toBe('');
+    expect(normalizeNoteTag('mcp/2024')).toBe('');
+  });
+
+  it('keeps tags where every segment has at least one letter', () => {
+    expect(normalizeNoteTag('mcp1')).toBe('mcp1');
+    expect(normalizeNoteTag('2024-q1')).toBe('2024-q1');
+  });
+
+  it('returns empty for inputs that cleanse to empty', () => {
+    expect(normalizeNoteTag('')).toBe('');
+    expect(normalizeNoteTag('   ')).toBe('');
+    expect(normalizeNoteTag('#')).toBe('');
+    expect(normalizeNoteTag('...')).toBe('');
+    expect(normalizeNoteTag('---')).toBe('');
+  });
+
+  it('mergeTags drops invalid tags so they never reach storage', () => {
+    expect(mergeTags(['gzw', 'active-directory'], ['#802.1x'])).toEqual([
+      'gzw',
+      'active-directory',
+      '802-1x',
+    ]);
+    expect(mergeTags([], ['#123', '#valid'])).toEqual(['valid']);
   });
 });

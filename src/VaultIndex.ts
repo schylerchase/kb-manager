@@ -54,6 +54,29 @@ export default class VaultIndex {
     this.derivedMapsDirty = true;
   }
 
+  /**
+   * Mark every file currently associated with `tag` as dirty so the next
+   * rebuild re-reads fresh tags from MetadataCache. Used by the TagMutator
+   * after writes complete — race-suppression skips the normal modify event,
+   * so the index has to be told explicitly that these files changed.
+   *
+   * No-op for an unknown tag (e.g. a tag that no file ever had).
+   */
+  markTagDirty(tag: string): void {
+    const paths = this.flatTagMap.get(tag);
+    if (!paths) {
+      this.derivedMapsDirty = true;
+      return;
+    }
+    for (const path of paths) this.dirty.add(path);
+    this.derivedMapsDirty = true;
+  }
+
+  /** Bulk form of {@link markTagDirty}. Mutator passes the set of affected tags. */
+  invalidateTags(tags: ReadonlySet<string>): void {
+    for (const tag of tags) this.markTagDirty(tag);
+  }
+
   // --- Rebuild ---
 
   /** Full rebuild — clears all maps and re-indexes every non-excluded vault file. */

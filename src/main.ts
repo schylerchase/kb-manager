@@ -8,6 +8,21 @@ import TagManager from './TagManager';
 import TocGenerator from './TocGenerator';
 import VaultIndex from './VaultIndex';
 import { buildDelimiter, isWriteSafe, type DelimiterType } from './lib/delimiter';
+import { TagMutator, createTagMutator } from './lib/tag-mutator';
+import { untagActiveFile } from './commands/untag-file';
+import { deleteTagEverywhere } from './commands/delete-tag';
+import { DeleteTagConfirmModal } from './commands/delete-tag-modal';
+import { TagPickerModal } from './commands/tag-picker-modal';
+import { previewRename, renameTagEverywhere } from './commands/rename-tag';
+import { RenameTagModal } from './commands/rename-tag-modal';
+import { computeTagStats, findCleanupCandidates } from './lib/tag-analytics';
+import { TagStatsModal } from './commands/tag-stats-modal';
+import { runBulkTagOps, type BulkSelector } from './commands/bulk-tag';
+import { BulkTagModal } from './commands/bulk-tag-modal';
+import { frontmatterToInlineForActiveFile, inlineToFrontmatterForActiveFile } from './commands/convert-tag-location';
+import { evaluateRules } from './lib/tag-rules';
+import { applyCleansePlan, buildCleansePlan } from './commands/cleanse-tags';
+import { CleanseTagsModal } from './commands/cleanse-tags-modal';
 
 const STATUS_IDLE = 'KB: idle';
 const STATUS_PREVIEW = 'KB: preview';
@@ -19,6 +34,7 @@ export default class KBManagerPlugin extends Plugin {
   mocGenerator!: MocGenerator;
   tocGenerator!: TocGenerator;
   tagManager!: TagManager;
+  tagMutator!: TagMutator;
   noteCapture!: NoteCapture;
   kbReminder!: KBReminder;
   sidebarRefreshCallbacks: Set<() => void> = new Set();
@@ -44,6 +60,20 @@ export default class KBManagerPlugin extends Plugin {
     // settings tab reassigns the field, so a cached reference goes stale.
     this.index = new VaultIndex(this.app, () => this.settings.excludedPaths);
     this.tagManager = new TagManager(this.index);
+    // Race-suppression for tag mutations: pre-mark the file dirty BEFORE the
+    // write so the rebuild scheduler sees fresh state on the next tick.
+    // Avoids relying solely on Obsidian's modify event ordering.
+    this.tagMutator = createTagMutator(
+      this.app,
+      {
+        getFilesWithTag: (tag) => this.index.getFilesWithTag(tag),
+        invalidateTags: (tags) => {
+          this.index.invalidateTags(tags);
+          void this.requestDirtyRebuild();
+        },
+      },
+      (path) => this.index.markDirty(path),
+    );
     const isUnloaded = () => this.unloaded;
     this.noteCapture = new NoteCapture(
       this.app,
@@ -75,10 +105,14 @@ export default class KBManagerPlugin extends Plugin {
           this.startScheduler();
           this.addManualRebuildControls();
           this.addInsertCommands();
+          this.addTagManagementCommands();
           this.noteCapture.addCommands(this);
           this.kbReminder.addCommands(this);
           this.addSidebarControls();
-          this.openSidebarOnFirstLoad();
+          // Intentionally NOT auto-opening the sidebar on enable. Any
+          // setViewState call — even with active:false — is a workspace
+          // mutation that on iPad closes an open settings modal. The user
+          // can open the sidebar via the ribbon icon or command palette.
         });
     });
   }
@@ -141,6 +175,67 @@ export default class KBManagerPlugin extends Plugin {
 
   async addTagsToCurrentNote(tags: string[]): Promise<void> {
     await this.noteCapture.addTagsToCurrentNote(tags);
+  }
+
+  async removeTagFromCurrentNote(tag: string): Promise<void> {
+    const result = await untagActiveFile(
+      {
+        getActiveMarkdownFile: () => this.getActiveMarkdownFile(),
+        readTagState: async (file) => {
+          const metadata = this.app.metadataCache.getFileCache(file);
+          const tagsValue = metadata?.frontmatter?.tags ?? metadata?.frontmatter?.tag;
+          let content = '';
+          try {
+            content = await this.app.vault.cachedRead(file);
+          } catch {
+            content = '';
+          }
+          return { frontmatterTags: tagsValue, content };
+        },
+        mutator: this.tagMutator,
+      },
+      tag,
+    );
+    if (result.ok) {
+      new Notice(`Removed #${result.tag}`);
+    } else {
+      new Notice(result.message);
+    }
+  }
+
+  async deleteTagEverywhereWithConfirm(rawTag: string): Promise<void> {
+    const tag = rawTag.replace(/^#/, '').trim();
+    if (tag === '') {
+      new Notice('Invalid tag.');
+      return;
+    }
+    const count = this.index.getFilesWithTag(tag).length;
+    if (count === 0) {
+      new Notice(`No notes use #${tag}.`);
+      return;
+    }
+    const modal = new DeleteTagConfirmModal(this.app, tag, count);
+    modal.open();
+    const confirmed = await modal.confirmed;
+    if (!confirmed) return;
+    const result = await deleteTagEverywhere(
+      {
+        mutator: this.tagMutator,
+        countFilesWithTag: (t) => this.index.getFilesWithTag(t).length,
+      },
+      tag,
+    );
+    if (result.ok) {
+      const errorSuffix = result.errors > 0 ? ` (${result.errors} error${result.errors === 1 ? '' : 's'})` : '';
+      new Notice(`Removed #${result.tag} from ${result.filesChanged} note${result.filesChanged === 1 ? '' : 's'}${errorSuffix}`);
+    } else {
+      new Notice(result.message);
+    }
+  }
+
+  private getActiveMarkdownFile(): TFile | null {
+    const view = this.app.workspace.getActiveViewOfType(MarkdownView);
+    return view?.file ?? null;
   }
 
   async createKbUpdateReminder(scopePath: string): Promise<void> {
@@ -251,6 +346,305 @@ export default class KBManagerPlugin extends Plugin {
     });
   }
 
+  private addTagManagementCommands(): void {
+    this.addCommand({
+      id: 'delete-tag-everywhere',
+      name: 'Delete tag everywhere…',
+      callback: () => this.pickTagThen('Pick a tag to delete', (tag) => this.deleteTagEverywhereWithConfirm(tag)),
+    });
+    this.addCommand({
+      id: 'rename-tag',
+      name: 'Rename tag…',
+      callback: () => this.pickTagThen('Pick a tag to rename', (tag) => this.renameTagWithConfirm(tag)),
+    });
+    this.addCommand({
+      id: 'merge-tag-into',
+      name: 'Merge tag into…',
+      callback: () => this.pickTagThen('Pick the source tag to merge', (tag) => this.mergeTagWithConfirm(tag)),
+    });
+    this.addCommand({
+      id: 'tag-stats',
+      name: 'Show tag stats…',
+      callback: () => this.pickTagThen('Pick a tag', (tag) => {
+        const stats = this.buildTagStats(tag);
+        if (!stats) {
+          new Notice(`No notes use #${tag}.`);
+          return;
+        }
+        new TagStatsModal(this.app, stats).open();
+      }),
+    });
+    this.addCommand({
+      id: 'bulk-tag-files',
+      name: 'Bulk tag files…',
+      callback: () => this.openBulkTagModal(),
+    });
+    this.addCommand({
+      id: 'inline-to-frontmatter',
+      name: 'Move inline tags to frontmatter (active note)',
+      callback: () => void this.runInlineToFrontmatter(),
+    });
+    this.addCommand({
+      id: 'frontmatter-to-inline',
+      name: 'Move frontmatter tags to inline (active note)',
+      callback: () => void this.runFrontmatterToInline(),
+    });
+    this.addCommand({
+      id: 'cleanse-invalid-tags',
+      name: 'Cleanse invalid tags across vault…',
+      callback: () => void this.cleanseInvalidTagsWithConfirm(),
+    });
+  }
+
+  async cleanseInvalidTagsWithConfirm(): Promise<void> {
+    const cleanseHost = {
+      mutator: this.tagMutator,
+      getAllTagsWithCounts: () =>
+        [...this.index.getTagTree().keys()].map((tag) => ({
+          tag,
+          noteCount: this.index.getFilesWithTag(tag).length,
+        })),
+    };
+    const plan = buildCleansePlan(cleanseHost);
+    const modal = new CleanseTagsModal(this.app, plan);
+    modal.open();
+    const confirmed = await modal.confirmed;
+    if (!confirmed) return;
+    if (plan.rewriteCount === 0) return;
+    const result = await applyCleansePlan(cleanseHost, plan);
+    const errorSuffix = result.errors > 0 ? ` (${result.errors} error${result.errors === 1 ? '' : 's'})` : '';
+    new Notice(
+      `Cleansed ${result.rewritten} tag${result.rewritten === 1 ? '' : 's'}, rewrote ${result.filesChanged} file${result.filesChanged === 1 ? '' : 's'}${errorSuffix}`,
+    );
+  }
+
+  private pickTagThen(prompt: string, then: (tag: string) => void | Promise<void>): void {
+    const allTags = [...this.index.getTagTree().keys()].sort();
+    if (allTags.length === 0) {
+      new Notice('No tags in the vault.');
+      return;
+    }
+    new TagPickerModal(this.app, prompt, allTags, (tag) => {
+      void then(tag);
+    }).open();
+  }
+
+  private buildTagStats(tag: string) {
+    const flatTagMap = new Map<string, string[]>();
+    for (const t of this.index.getTagTree().keys()) {
+      flatTagMap.set(t, this.index.getFilesWithTag(t));
+    }
+    return computeTagStats(tag, {
+      flatTagMap,
+      folderForPath: (p) => p.split('/').slice(0, -1).join('/') || '/',
+    });
+  }
+
+  async renameTagWithConfirm(fromTag: string): Promise<void> {
+    const tag = fromTag.replace(/^#/, '').trim();
+    if (tag === '') {
+      new Notice('Invalid tag.');
+      return;
+    }
+    const count = this.index.getFilesWithTag(tag).length;
+    if (count === 0) {
+      new Notice(`No notes use #${tag}.`);
+      return;
+    }
+    const modal = new RenameTagModal(this.app, tag, count, async (destination) => {
+      return previewRename(
+        {
+          mutator: this.tagMutator,
+          countFilesWithTag: (t) => this.index.getFilesWithTag(t).length,
+          tagExists: (t) => this.index.getFilesWithTag(t).length > 0,
+        },
+        tag,
+        destination,
+      );
+    });
+    modal.open();
+    const result = await modal.result;
+    if (!result.confirmed || result.destination === '') return;
+    const out = await renameTagEverywhere(
+      {
+        mutator: this.tagMutator,
+        countFilesWithTag: (t) => this.index.getFilesWithTag(t).length,
+        tagExists: (t) => this.index.getFilesWithTag(t).length > 0,
+      },
+      tag,
+      result.destination,
+    );
+    if (out.ok) {
+      const verb = out.mergedIntoExisting ? 'Merged' : 'Renamed';
+      new Notice(`${verb} #${out.from} → #${out.to} across ${out.filesChanged} note${out.filesChanged === 1 ? '' : 's'}`);
+    } else {
+      new Notice(out.message);
+    }
+  }
+
+  async mergeTagWithConfirm(fromTag: string): Promise<void> {
+    const tag = fromTag.replace(/^#/, '').trim();
+    if (tag === '') {
+      new Notice('Invalid tag.');
+      return;
+    }
+    const allTags = [...this.index.getTagTree().keys()].filter((t) => t !== tag).sort();
+    if (allTags.length === 0) {
+      new Notice('No other tags to merge into.');
+      return;
+    }
+    new TagPickerModal(this.app, `Merge #${tag} into…`, allTags, (target) => {
+      void (async () => {
+        const out = await renameTagEverywhere(
+          {
+            mutator: this.tagMutator,
+            countFilesWithTag: (t) => this.index.getFilesWithTag(t).length,
+            tagExists: (t) => this.index.getFilesWithTag(t).length > 0,
+          },
+          tag,
+          target,
+        );
+        if (out.ok) {
+          new Notice(`Merged #${out.from} → #${out.to} (${out.filesChanged} note${out.filesChanged === 1 ? '' : 's'})`);
+        } else {
+          new Notice(out.message);
+        }
+      })();
+    }).open();
+  }
+
+  private openBulkTagModal(): void {
+    const allTags = [...this.index.getTagTree().keys()].sort();
+    const modal = new BulkTagModal(this.app, allTags, async (selector) => {
+      const files = this.resolveBulkSelector(selector);
+      return files.length;
+    });
+    modal.open();
+    void modal.result.then(async (result) => {
+      if (!result.confirmed) return;
+      const out = await runBulkTagOps(
+        {
+          mutator: this.tagMutator,
+          resolveSelector: (sel) => this.resolveBulkSelector(sel),
+        },
+        result.selector,
+        result.ops,
+      );
+      if (out.ok) {
+        new Notice(`Bulk tag complete: ${out.filesChanged}/${out.filesScanned} files changed`);
+      } else {
+        new Notice(out.message);
+      }
+    });
+  }
+
+  private resolveBulkSelector(selector: BulkSelector): TFile[] {
+    if (selector.kind === 'folder') {
+      const prefix = selector.path === '' ? '' : selector.path.endsWith('/') ? selector.path : `${selector.path}/`;
+      return this.app.vault.getMarkdownFiles().filter((f) => prefix === '' || f.path === selector.path || f.path.startsWith(prefix));
+    }
+    if (selector.kind === 'tag') {
+      const paths = this.index.getFilesWithTag(selector.tag);
+      const result: TFile[] = [];
+      for (const p of paths) {
+        const file = this.app.vault.getAbstractFileByPath(p);
+        if (file instanceof TFile) result.push(file);
+      }
+      return result;
+    }
+    const result: TFile[] = [];
+    for (const p of selector.paths) {
+      const file = this.app.vault.getAbstractFileByPath(p);
+      if (file instanceof TFile) result.push(file);
+    }
+    return result;
+  }
+
+  private async runInlineToFrontmatter(): Promise<void> {
+    const out = await inlineToFrontmatterForActiveFile({
+      mutator: this.tagMutator,
+      getActiveMarkdownFile: () => this.getActiveMarkdownFile(),
+    });
+    if (out.ok) {
+      new Notice(out.filesChanged > 0 ? 'Moved inline tags to frontmatter' : 'No inline tags to move');
+    } else {
+      new Notice(out.message);
+    }
+  }
+
+  private async runFrontmatterToInline(): Promise<void> {
+    const out = await frontmatterToInlineForActiveFile({
+      mutator: this.tagMutator,
+      getActiveMarkdownFile: () => this.getActiveMarkdownFile(),
+    });
+    if (out.ok) {
+      new Notice(out.filesChanged > 0 ? 'Moved frontmatter tags to inline' : 'No frontmatter tags to move');
+    } else {
+      new Notice(out.message);
+    }
+  }
+
+  /** Called by vault create/modify listeners. Applies any matching tag rules. */
+  private async applyTagRules(file: TFile, trigger: 'on-create' | 'on-modify'): Promise<void> {
+    const rules = this.settings.tagRules ?? [];
+    if (rules.length === 0) return;
+    const evaluation = evaluateRules(rules, { filePath: file.path, trigger }, (rule, error) => {
+      console.warn(`KB Manager: tag-rule "${rule.name}" failed:`, error.message);
+    });
+    if (evaluation.tagsToAdd.length === 0) return;
+    await this.tagMutator.bulkApply([file], evaluation.tagsToAdd.map((tag) => ({ kind: 'add', tag })));
+  }
+
+  /** Open the fuzzy tag picker — sidebar toolbar entry point. */
+  openTagPicker(prompt: string, tags: string[], onPick: (tag: string) => void): void {
+    new TagPickerModal(this.app, prompt, tags, onPick).open();
+  }
+
+  /** Open the bulk-tag modal — sidebar toolbar entry point. */
+  openBulkTagModalPublic(): void {
+    this.openBulkTagModal();
+  }
+
+  /** Open Obsidian settings, scrolled to KB Manager — sidebar Rules button. */
+  openTagRulesSettings(): void {
+    const setting = (this.app as { setting?: { open?: () => void; openTabById?: (id: string) => void } }).setting;
+    setting?.open?.();
+    setting?.openTabById?.(this.manifest.id);
+  }
+
+  /** Direct merge (no picker modal) — used by the Review-tab cleanup buttons. */
+  async mergeTagsDirectly(from: string, into: string): Promise<void> {
+    const out = await renameTagEverywhere(
+      {
+        mutator: this.tagMutator,
+        countFilesWithTag: (t) => this.index.getFilesWithTag(t).length,
+        tagExists: (t) => this.index.getFilesWithTag(t).length > 0,
+      },
+      from,
+      into,
+    );
+    if (out.ok) {
+      new Notice(`Merged #${out.from} → #${out.to} (${out.filesChanged} note${out.filesChanged === 1 ? '' : 's'})`);
+    } else {
+      new Notice(out.message);
+    }
+  }
+
+  /** Sidebar uses this so it can construct and open the modal in one call. */
+  buildTagStatsForMenu(tag: string): TagStatsModal | null {
+    const stats = this.buildTagStats(tag);
+    return stats ? new TagStatsModal(this.app, stats) : null;
+  }
+
+  /** Surface cleanup candidates (orphan + near-duplicate tags). Used by Review tab. */
+  getTagCleanupCandidates() {
+    const flatTagMap = new Map<string, string[]>();
+    for (const t of this.index.getTagTree().keys()) {
+      flatTagMap.set(t, this.index.getFilesWithTag(t));
+    }
+    return findCleanupCandidates({ flatTagMap });
+  }
+
   private addSidebarControls(): void {
     this.addRibbonIcon('network', 'KB Manager: Open sidebar', () => {
       this.activateSidebar().catch(err => console.error('KB Manager: activateSidebar failed', err));
@@ -317,19 +711,22 @@ export default class KBManagerPlugin extends Plugin {
     return '<!-- pending rebuild -->';
   }
 
-  private async activateSidebar(): Promise<void> {
+  private async activateSidebar(focus = true): Promise<void> {
     const first = this.app.workspace.getLeavesOfType(KB_SIDEBAR_VIEW_TYPE)[0];
     if (first) {
-      this.app.workspace.revealLeaf(first);
+      if (focus) this.app.workspace.revealLeaf(first);
       return;
     }
     const rightLeaf = this.app.workspace.getRightLeaf(false);
-    if (rightLeaf) await rightLeaf.setViewState({ type: KB_SIDEBAR_VIEW_TYPE, active: true });
+    if (rightLeaf) await rightLeaf.setViewState({ type: KB_SIDEBAR_VIEW_TYPE, active: focus });
   }
 
   private openSidebarOnFirstLoad(): void {
     if (this.app.workspace.getLeavesOfType(KB_SIDEBAR_VIEW_TYPE).length > 0) return;
-    this.activateSidebar().catch(err => console.error('KB Manager: initial sidebar open failed', err));
+    // Attach the view without stealing focus. Activating the leaf during
+    // plugin enable dismisses any open settings modal because Obsidian
+    // closes modals when an unrelated leaf is set active.
+    this.activateSidebar(false).catch(err => console.error('KB Manager: initial sidebar open failed', err));
   }
 
   private notifySidebarRefresh(): void {
@@ -345,7 +742,11 @@ export default class KBManagerPlugin extends Plugin {
   private registerVaultEvents(): void {
     this.registerEvent(
       this.app.vault.on('modify', (file) => {
-        if (file instanceof TFile) this.index.markDirty(file.path);
+        if (!(file instanceof TFile)) return;
+        this.index.markDirty(file.path);
+        void this.applyTagRules(file, 'on-modify').catch((err) =>
+          console.error('KB Manager: tag rules on-modify failed', err),
+        );
       })
     );
     this.registerEvent(
@@ -355,6 +756,9 @@ export default class KBManagerPlugin extends Plugin {
         this.noteCapture
           .initializeCreatedNote(file, this.settings.initializeNoteProperties, this.settings.excludedPaths)
           .catch(err => console.error('KB Manager: initialize note properties failed', err));
+        void this.applyTagRules(file, 'on-create').catch((err) =>
+          console.error('KB Manager: tag rules on-create failed', err),
+        );
       })
     );
     this.registerEvent(

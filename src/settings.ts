@@ -1,6 +1,7 @@
 import { App, Notice, PluginSettingTab, Setting } from 'obsidian';
 import { DebouncedRebuild } from 'lib/debounced-rebuild';
 import { parseFolderRulesWithDiagnostics, parseExclusionPatterns } from 'lib/settings-parser';
+import type { TagRule } from 'lib/tag-rules';
 
 export interface KBManagerSettings {
   generatedWritesEnabled: boolean;
@@ -12,6 +13,7 @@ export interface KBManagerSettings {
   excludedPaths: string[];
   defaultMocFormat: 'dedicated' | 'inline';
   folderRules: Record<string, 'dedicated' | 'inline'>;
+  tagRules: TagRule[];
 }
 
 export const DEFAULT_SETTINGS: KBManagerSettings = {
@@ -24,6 +26,7 @@ export const DEFAULT_SETTINGS: KBManagerSettings = {
   excludedPaths: [],
   defaultMocFormat: 'dedicated',
   folderRules: {},
+  tagRules: [],
 };
 
 type SettingsHost = {
@@ -51,6 +54,7 @@ export class KBSettingsTab extends PluginSettingTab {
     this.buildGeneralSection(containerEl);
     this.buildExclusionsSection(containerEl);
     this.buildMocFormatSection(containerEl);
+    this.buildTagRulesSection(containerEl);
   }
 
   hide(): void {
@@ -244,5 +248,128 @@ export class KBSettingsTab extends PluginSettingTab {
             } catch (err) { console.error('KB Manager: failed to save settings', err); }
           })
       );
+  }
+
+  private buildTagRulesSection(containerEl: HTMLElement): void {
+    containerEl.createEl('h3', { text: 'Tag Rules' });
+    containerEl.createEl('p', {
+      cls: 'setting-item-description',
+      text: 'Automatically add tags to notes that match a folder prefix or path regex. Rules fire on note create and on modify.',
+    });
+
+    const list = containerEl.createDiv({ cls: 'kb-tag-rules-list' });
+    const renderRules = (): void => {
+      list.empty();
+      const rules = this.plugin.settings.tagRules ?? [];
+      if (rules.length === 0) {
+        list.createEl('p', { cls: 'kb-empty', text: 'No rules yet.' });
+      } else {
+        rules.forEach((rule, idx) => this.renderRuleCard(list, rule, idx, renderRules));
+      }
+    };
+    renderRules();
+
+    new Setting(containerEl)
+      .addButton((btn) =>
+        btn
+          .setButtonText('Add rule')
+          .setCta()
+          .onClick(async () => {
+            const rules = this.plugin.settings.tagRules ?? [];
+            rules.push({
+              id: `r${Date.now().toString(36)}`,
+              name: 'New rule',
+              enabled: true,
+              trigger: 'on-create',
+              match: { folderPath: '' },
+              action: { addTags: [] },
+            });
+            this.plugin.settings.tagRules = rules;
+            await this.plugin.saveSettings();
+            renderRules();
+          }),
+      );
+  }
+
+  private renderRuleCard(parent: HTMLElement, rule: TagRule, index: number, refresh: () => void): void {
+    const card = parent.createDiv({ cls: 'kb-tag-rule-card' });
+    if (!rule.enabled) card.addClass('is-disabled');
+
+    const header = card.createDiv({ cls: 'kb-tag-rule-header' });
+    const nameInput = header.createEl('input', { type: 'text', cls: 'kb-tag-rule-name' });
+    nameInput.value = rule.name;
+    nameInput.placeholder = 'Rule name';
+    nameInput.addEventListener('change', async () => {
+      rule.name = nameInput.value;
+      await this.plugin.saveSettings();
+    });
+
+    const enabledToggle = header.createEl('input', { type: 'checkbox' });
+    enabledToggle.checked = rule.enabled;
+    enabledToggle.title = 'Enable / disable rule';
+    enabledToggle.addEventListener('change', async () => {
+      rule.enabled = enabledToggle.checked;
+      await this.plugin.saveSettings();
+      refresh();
+    });
+
+    const grid = card.createDiv({ cls: 'kb-tag-rule-grid' });
+
+    grid.createEl('label', { text: 'Trigger' });
+    const triggerSel = grid.createEl('select');
+    for (const [val, label] of [
+      ['on-create', 'When a note is created'],
+      ['on-modify', 'When a note is modified'],
+      ['manual', 'Manual only'],
+    ] as const) {
+      const opt = triggerSel.createEl('option', { text: label });
+      opt.value = val;
+      if (rule.trigger === val) opt.selected = true;
+    }
+    triggerSel.addEventListener('change', async () => {
+      rule.trigger = triggerSel.value as TagRule['trigger'];
+      await this.plugin.saveSettings();
+    });
+
+    grid.createEl('label', { text: 'Folder prefix' });
+    const folderInput = grid.createEl('input', { type: 'text' });
+    folderInput.value = rule.match.folderPath ?? '';
+    folderInput.placeholder = 'daily';
+    folderInput.addEventListener('change', async () => {
+      rule.match.folderPath = folderInput.value.trim() || undefined;
+      await this.plugin.saveSettings();
+    });
+
+    grid.createEl('label', { text: 'Path regex' });
+    const regexInput = grid.createEl('input', { type: 'text' });
+    regexInput.value = rule.match.pathRegex ?? '';
+    regexInput.placeholder = 'projects/.+\\.md$';
+    regexInput.addEventListener('change', async () => {
+      rule.match.pathRegex = regexInput.value.trim() || undefined;
+      await this.plugin.saveSettings();
+    });
+
+    grid.createEl('label', { text: 'Add tags' });
+    const tagsInput = grid.createEl('input', { type: 'text' });
+    tagsInput.value = (rule.action.addTags ?? []).join(', ');
+    tagsInput.placeholder = 'tag1, tag2/nested';
+    tagsInput.addEventListener('change', async () => {
+      const tags = tagsInput.value
+        .split(',')
+        .map((t) => t.trim().replace(/^#/, '').toLowerCase())
+        .filter((t) => t !== '');
+      rule.action.addTags = tags;
+      await this.plugin.saveSettings();
+    });
+
+    const actions = card.createDiv({ cls: 'kb-tag-rule-actions' });
+    const deleteBtn = actions.createEl('button', { text: 'Delete' });
+    deleteBtn.addEventListener('click', async () => {
+      const rules = this.plugin.settings.tagRules ?? [];
+      rules.splice(index, 1);
+      this.plugin.settings.tagRules = rules;
+      await this.plugin.saveSettings();
+      refresh();
+    });
   }
 }

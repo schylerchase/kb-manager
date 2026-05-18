@@ -13,6 +13,7 @@ export type AddRowAction = (
 interface NoteActionPlugin {
   createNoteFromPrompt(folderPath: string, tags?: string[]): void;
   addTagsToCurrentNote(tags: string[]): Promise<void>;
+  removeTagFromCurrentNote(tag: string): Promise<void>;
   promptAddTagsToNote(filePath: string): void;
 }
 
@@ -48,6 +49,9 @@ export function addTagNoteActions(
 ): void {
   addRowAction(row, 'kb-tag-add', 'tag', `Add #${tag} to current note`, () => {
     plugin.addTagsToCurrentNote([tag]).catch(err => console.error('KB Manager: add tag failed', err));
+  });
+  addRowAction(row, 'kb-tag-remove', 'circle-minus', `Remove #${tag} from current note`, () => {
+    plugin.removeTagFromCurrentNote(tag).catch(err => console.error('KB Manager: remove tag failed', err));
   });
   addRowAction(row, 'kb-tag-new-note', 'file-plus', `New note tagged #${tag}`, () => {
     plugin.createNoteFromPrompt(folderPath, [tag]);

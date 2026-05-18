@@ -1,0 +1,165 @@
+{
+  "lastAuditedAt": "2026-05-17T00:00:00Z",
+  "symbols": [
+    {
+      "name": "App",
+      "kind": "class",
+      "introducedIn": "0.9.7",
+      "sourceFiles": [
+        "src/VaultIndex.ts",
+        "src/TocGenerator.ts",
+        "src/MocGenerator.ts",
+        "src/settings.ts",
+        "src/KBReminder.ts",
+        "src/NoteCapture.ts",
+        "src/lib/quick-reminder-adapter.ts"
+      ],
+      "sourceOfTruth": "obsidian.d.ts @since tag"
+    },
+    {
+      "name": "Editor",
+      "kind": "class",
+      "introducedIn": "0.11.11",
+      "sourceFiles": [
+        "src/main.ts"
+      ],
+      "sourceOfTruth": "obsidian.d.ts @since tag"
+    },
+    {
+      "name": "ItemView",
+      "kind": "class",
+      "introducedIn": "0.9.7",
+      "sourceFiles": [
+        "src/KBSidebarView.ts"
+      ],
+      "sourceOfTruth": "obsidian.d.ts @since tag"
+    },
+    {
+      "name": "MarkdownView",
+      "kind": "class",
+      "introducedIn": "0.10.0",
+      "sourceFiles": [
+        "src/main.ts"
+      ],
+      "sourceOfTruth": "core API baseline"
+    },
+    {
+      "name": "Modal",
+      "kind": "class",
+      "introducedIn": "0.10.0",
+      "sourceFiles": [
+        "src/NoteCapture.ts"
+      ],
+      "sourceOfTruth": "core API baseline"
+    },
+    {
+      "name": "Notice",
+      "kind": "class",
+      "introducedIn": "0.9.7",
+      "sourceFiles": [
+        "src/settings.ts",
+        "src/KBReminder.ts",
+        "src/NoteCapture.ts",
+        "src/main.ts",
+        "src/KBSidebarView.ts"
+      ],
+      "sourceOfTruth": "obsidian.d.ts @since tag"
+    },
+    {
+      "name": "Plugin",
+      "kind": "class",
+      "introducedIn": "0.9.7",
+      "sourceFiles": [
+        "src/KBReminder.ts",
+        "src/NoteCapture.ts",
+        "src/main.ts"
+      ],
+      "sourceOfTruth": "obsidian.d.ts @since tag"
+    },
+    {
+      "name": "PluginSettingTab",
+      "kind": "class",
+      "introducedIn": "0.9.7",
+      "sourceFiles": [
+        "src/settings.ts"
+      ],
+      "sourceOfTruth": "obsidian.d.ts @since tag"
+    },
+    {
+      "name": "Setting",
+      "kind": "class",
+      "introducedIn": "0.9.7",
+      "sourceFiles": [
+        "src/settings.ts",
+        "src/NoteCapture.ts"
+      ],
+      "sourceOfTruth": "obsidian.d.ts @since tag"
+    },
+    {
+      "name": "TFile",
+      "kind": "class",
+      "introducedIn": "0.9.7",
+      "sourceFiles": [
+        "src/VaultIndex.ts",
+        "src/TocGenerator.ts",
+        "src/MocGenerator.ts",
+        "src/KBReminder.ts",
+        "src/NoteCapture.ts",
+        "src/main.ts",
+        "src/KBSidebarView.ts",
+        "src/lib/sidebar-note-actions.ts"
+      ],
+      "sourceOfTruth": "obsidian.d.ts @since tag"
+    },
+    {
+      "name": "TFolder",
+      "kind": "class",
+      "introducedIn": "0.9.7",
+      "sourceFiles": [
+        "src/NoteCapture.ts"
+      ],
+      "sourceOfTruth": "obsidian.d.ts @since tag"
+    },
+    {
+      "name": "WorkspaceLeaf",
+      "kind": "class",
+      "introducedIn": "0.10.0",
+      "sourceFiles": [
+        "src/KBSidebarView.ts"
+      ],
+      "sourceOfTruth": "core API baseline"
+    },
+    {
+      "name": "getAllTags",
+      "kind": "function",
+      "introducedIn": "0.10.0",
+      "sourceFiles": [
+        "src/VaultIndex.ts"
+      ],
+      "sourceOfTruth": "core API baseline"
+    },
+    {
+      "name": "normalizePath",
+      "kind": "function",
+      "introducedIn": "0.10.0",
+      "sourceFiles": [
+        "src/TocGenerator.ts",
+        "src/MocGenerator.ts",
+        "src/KBReminder.ts",
+        "src/KBSidebarView.ts"
+      ],
+      "sourceOfTruth": "core API baseline"
+    },
+    {
+      "name": "setIcon",
+      "kind": "function",
+      "introducedIn": "0.10.0",
+      "sourceFiles": [
+        "src/KBSidebarView.ts",
+        "src/lib/sidebar-note-actions.ts",
+        "src/lib/sidebar-ui.ts"
+      ],
+      "sourceOfTruth": "core API baseline"
+    }
+  ]
+}

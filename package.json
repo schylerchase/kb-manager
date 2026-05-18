@@ -1,6 +1,6 @@
 {
   "name": "kb-manager",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "MOC-first knowledge base automation for Obsidian.",
   "main": "main.js",
   "scripts": {

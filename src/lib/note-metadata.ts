@@ -17,14 +17,50 @@ export function formatDate(date: Date): string {
   return `${year}-${month}-${day}`;
 }
 
+/**
+ * Normalize and cleanse a tag for storage. Returns '' for tags that cannot
+ * be made valid — callers already treat empty as "skip this tag".
+ *
+ * Cleansing rules:
+ * - Strip leading `#`, trim, lowercase.
+ * - Replace whitespace with `-`.
+ * - Replace any other invalid character with `-` (Obsidian only accepts
+ *   letters, digits, `_`, `-`, and `/` for nesting — a period like
+ *   `#802.1x` is otherwise rendered as invalid in the properties pane).
+ * - Collapse consecutive `-` and `/`.
+ * - Strip leading/trailing `-` per hierarchy segment and leading/trailing `/`.
+ *
+ * Validation:
+ * - Every hierarchy segment must contain at least one non-digit character
+ *   (Obsidian rule: tags must have at least one alphabetical character).
+ *   Pure-numeric segments like `#123` or `#proj/2024` would silently render
+ *   as broken pills; we reject the whole tag so the caller can prompt.
+ */
 export function normalizeNoteTag(rawTag: string): string {
-  return rawTag
+  const cleansed = rawTag
     .trim()
     .replace(/^#/, '')
+    .toLowerCase()
     .replace(/\s+/g, '-')
+    // Anything outside the allowed alphabet becomes a dash, then dashes get
+    // collapsed below. This keeps the cleansed tag visually close to the
+    // original (e.g. `802.1x` → `802-1x`) instead of mangling it.
+    .replace(/[^a-z0-9_/-]/g, '-')
     .replace(/\/+/g, '/')
+    .replace(/-+/g, '-')
     .replace(/^\/|\/$/g, '')
-    .toLowerCase();
+    .split('/')
+    .map((seg) => seg.replace(/^-+|-+$/g, ''))
+    .join('/');
+
+  if (cleansed === '') return '';
+
+  for (const segment of cleansed.split('/')) {
+    if (segment === '') return '';
+    if (!/[a-z_]/.test(segment)) return '';
+  }
+
+  return cleansed;
 }
 
 export function normalizeNoteTags(rawTags: string[]): string[] {

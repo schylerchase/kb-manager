@@ -1,6 +1,7 @@
 node_modules/
 dist/
 .planning/
+.tmp-tests/
 main.js
 *.js.map
 .DS_Store
