@@ -39,7 +39,7 @@ export class RenameTagModal extends Modal {
       type: 'text',
       placeholder: 'new-tag',
     });
-    this.inputEl.style.width = '100%';
+    this.inputEl.addClass('kb-rename-modal__input');
     this.inputEl.addEventListener('input', () => this.schedulePreview());
     this.inputEl.addEventListener('keydown', (evt) => {
       if (evt.key === 'Enter') {
@@ -49,9 +49,7 @@ export class RenameTagModal extends Modal {
     });
 
     this.previewEl = contentEl.createDiv();
-    this.previewEl.style.marginTop = '0.6em';
-    this.previewEl.style.fontSize = '0.85em';
-    this.previewEl.style.color = 'var(--text-muted)';
+    this.previewEl.addClass('kb-rename-modal__preview');
     this.previewEl.setText('Enter a destination tag to see the preview.');
 
     new Setting(contentEl)
@@ -104,6 +102,10 @@ export class RenameTagModal extends Modal {
   }
 
   onClose(): void {
+    if (this.debounceHandle !== null) {
+      window.clearTimeout(this.debounceHandle);
+      this.debounceHandle = null;
+    }
     this.resolveResult({ confirmed: false, destination: '' });
     this.contentEl.empty();
   }

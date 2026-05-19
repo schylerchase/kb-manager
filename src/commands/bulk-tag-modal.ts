@@ -117,30 +117,28 @@ export class BulkTagModal extends Modal {
   private renderOpRow(parent: HTMLElement, index: number): void {
     const op = this.ops[index]!;
     const row = parent.createDiv({ cls: 'kb-bulk-op-row' });
-    row.style.display = 'flex';
-    row.style.gap = '6px';
-    row.style.marginBottom = '6px';
+    row.addClass('kb-bulk-tag-row');
 
     const label = row.createSpan({ text: `${op.kind}: ` });
-    label.style.width = '4.5em';
+    label.addClass('kb-bulk-tag-row__label');
 
     if (op.kind === 'rename') {
       const fromInput = row.createEl('input', { type: 'text', placeholder: 'from' });
       fromInput.value = op.from;
-      fromInput.style.flex = '1';
+      fromInput.addClass('kb-bulk-tag-row__input');
       fromInput.addEventListener('input', () => {
         this.ops[index] = { kind: 'rename', from: fromInput.value, to: (op as { to: string }).to };
       });
       const toInput = row.createEl('input', { type: 'text', placeholder: 'to' });
       toInput.value = op.to;
-      toInput.style.flex = '1';
+      toInput.addClass('kb-bulk-tag-row__input');
       toInput.addEventListener('input', () => {
         this.ops[index] = { kind: 'rename', from: (this.ops[index] as { from: string }).from, to: toInput.value };
       });
     } else {
       const tagInput = row.createEl('input', { type: 'text', placeholder: 'tag' });
       tagInput.value = op.tag;
-      tagInput.style.flex = '1';
+      tagInput.addClass('kb-bulk-tag-row__input');
       tagInput.addEventListener('input', () => {
         this.ops[index] = { kind: op.kind, tag: tagInput.value };
       });

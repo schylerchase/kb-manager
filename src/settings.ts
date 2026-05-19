@@ -14,6 +14,8 @@ export interface KBManagerSettings {
   defaultMocFormat: 'dedicated' | 'inline';
   folderRules: Record<string, 'dedicated' | 'inline'>;
   tagRules: TagRule[];
+  rebuildRibbonIconIndex: number | null;
+  sidebarRibbonIconIndex: number | null;
 }
 
 export const DEFAULT_SETTINGS: KBManagerSettings = {
@@ -27,6 +29,8 @@ export const DEFAULT_SETTINGS: KBManagerSettings = {
   defaultMocFormat: 'dedicated',
   folderRules: {},
   tagRules: [],
+  rebuildRibbonIconIndex: null,
+  sidebarRibbonIconIndex: null,
 };
 
 type SettingsHost = {

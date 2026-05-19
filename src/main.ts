@@ -23,6 +23,7 @@ import { frontmatterToInlineForActiveFile, inlineToFrontmatterForActiveFile } fr
 import { evaluateRules } from './lib/tag-rules';
 import { applyCleansePlan, buildCleansePlan } from './commands/cleanse-tags';
 import { CleanseTagsModal } from './commands/cleanse-tags-modal';
+import { getRibbonIconIndex, restoreRibbonIconIndex } from './lib/ribbon-order';
 
 const STATUS_IDLE = 'KB: idle';
 const STATUS_PREVIEW = 'KB: preview';
@@ -54,6 +55,18 @@ export default class KBManagerPlugin extends Plugin {
   private metadataAwaitingRename: Set<string> = new Set();
 
   async onload(): Promise<void> {
+    // Register view FIRST — before any await — so Obsidian's workspace
+    // restore can place the sidebar leaf at its saved position. Registering
+    // after `await loadSettings()` lets layout restore beat the
+    // registration; Obsidian then renders our leaf as a deferred placeholder
+    // at the END of the sidebar (the "tabs land at the end" bug on every
+    // app start). The factory closure resolves `this` lazily — leaf
+    // construction happens on tab activation, which is always after onload.
+    this.registerView(
+      KB_SIDEBAR_VIEW_TYPE,
+      (leaf) => new KBSidebarView(leaf, this),
+    );
+
     await this.loadSettings();
 
     // Pass a getter so the index always sees the live excludedPaths array —
@@ -84,7 +97,6 @@ export default class KBManagerPlugin extends Plugin {
     this.kbReminder = new KBReminder(this.app, this.settings);
     this.mocGenerator = new MocGenerator(this.app, this.index, this.settings, isUnloaded);
     this.tocGenerator = new TocGenerator(this.app, this.index, this.settings, isUnloaded);
-    this.registerView(KB_SIDEBAR_VIEW_TYPE, leaf => new KBSidebarView(leaf, this));
 
     this.addSettingTab(new KBSettingsTab(this.app, this));
 
@@ -95,6 +107,8 @@ export default class KBManagerPlugin extends Plugin {
       if (this.unloaded) return;
       this.statusBarItem = this.addStatusBarItem();
       this.statusBarItem.setText(this.statusText());
+      this.addManualRebuildControls();
+      this.addSidebarControls();
       this.registerVaultEvents();
       this.index.onRebuildComplete = () => this.runGenerators();
 
@@ -103,12 +117,10 @@ export default class KBManagerPlugin extends Plugin {
         .finally(() => {
           if (this.unloaded) return;
           this.startScheduler();
-          this.addManualRebuildControls();
           this.addInsertCommands();
           this.addTagManagementCommands();
           this.noteCapture.addCommands(this);
           this.kbReminder.addCommands(this);
-          this.addSidebarControls();
           // Intentionally NOT auto-opening the sidebar on enable. Any
           // setViewState call — even with active:false — is a workspace
           // mutation that on iPad closes an open settings modal. The user
@@ -120,6 +132,50 @@ export default class KBManagerPlugin extends Plugin {
   onunload(): void {
     this.unloaded = true;
     this.stopScheduler();
+  }
+
+  private restoreRibbonPosition(
+    ribbonIcon: HTMLElement,
+    getSavedIndex: () => number | null | undefined,
+  ): void {
+    const restore = () => restoreRibbonIconIndex(ribbonIcon, getSavedIndex());
+    restore();
+    window.setTimeout(restore, 250);
+    window.setTimeout(restore, 1000);
+    window.setTimeout(restore, 2000);
+  }
+
+  private trackRibbonPosition(
+    ribbonIcon: HTMLElement,
+    getSavedIndex: () => number | null | undefined,
+    saveIndex: (index: number) => Promise<void>,
+  ): void {
+    let canSave = false;
+    let lastSaved = getSavedIndex();
+    const scheduleSave = () => {
+      if (!canSave) return;
+      window.setTimeout(() => {
+        const index = getRibbonIconIndex(ribbonIcon);
+        if (index === null || index === lastSaved) return;
+        lastSaved = index;
+        saveIndex(index).catch(err => console.error('KB Manager: failed to save ribbon order', err));
+      }, 150);
+    };
+
+    window.setTimeout(() => {
+      canSave = true;
+    }, 2500);
+
+    this.registerDomEvent(ribbonIcon, 'mouseup', scheduleSave);
+    this.registerDomEvent(ribbonIcon, 'touchend', scheduleSave);
+    this.registerDomEvent(ribbonIcon, 'dragend', scheduleSave);
+    this.registerDomEvent(ribbonIcon, 'keyup', scheduleSave);
+    const parent = ribbonIcon.parentElement;
+    if (parent) {
+      const observer = new MutationObserver(scheduleSave);
+      observer.observe(parent, { childList: true });
+      this.register(() => observer.disconnect());
+    }
   }
 
   /**
@@ -319,9 +375,18 @@ export default class KBManagerPlugin extends Plugin {
   }
 
   private addManualRebuildControls(): void {
-    this.addRibbonIcon('rotate-cw', 'KB Manager: Rebuild now', () => {
+    const ribbonIcon = this.addRibbonIcon('rotate-cw', 'KB Manager: Rebuild now', () => {
       this.triggerManualRebuild();
     });
+    this.restoreRibbonPosition(ribbonIcon, () => this.settings.rebuildRibbonIconIndex);
+    this.trackRibbonPosition(
+      ribbonIcon,
+      () => this.settings.rebuildRibbonIconIndex,
+      async index => {
+        this.settings.rebuildRibbonIconIndex = index;
+        await this.saveSettings();
+      },
+    );
     this.addCommand({
       id: 'rebuild',
       name: 'Rebuild now',
@@ -646,9 +711,18 @@ export default class KBManagerPlugin extends Plugin {
   }
 
   private addSidebarControls(): void {
-    this.addRibbonIcon('network', 'KB Manager: Open sidebar', () => {
+    const ribbonIcon = this.addRibbonIcon('network', 'KB Manager: Open sidebar', () => {
       this.activateSidebar().catch(err => console.error('KB Manager: activateSidebar failed', err));
     });
+    this.restoreRibbonPosition(ribbonIcon, () => this.settings.sidebarRibbonIconIndex);
+    this.trackRibbonPosition(
+      ribbonIcon,
+      () => this.settings.sidebarRibbonIconIndex,
+      async index => {
+        this.settings.sidebarRibbonIconIndex = index;
+        await this.saveSettings();
+      },
+    );
     this.addCommand({
       id: 'open-sidebar',
       name: 'Open sidebar',

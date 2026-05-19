@@ -682,6 +682,30 @@
   }
 }
 
+.kb-bulk-tag-row {
+  display: flex;
+  gap: 6px;
+  margin-bottom: 6px;
+}
+
+.kb-bulk-tag-row__label {
+  width: 4.5em;
+}
+
+.kb-bulk-tag-row__input {
+  flex: 1;
+}
+
+.kb-rename-modal__input {
+  width: 100%;
+}
+
+.kb-rename-modal__preview {
+  margin-top: 0.6em;
+  font-size: 0.85em;
+  color: var(--text-muted);
+}
+
 /* ============ RESPONSIVE ============ */
 
 @container (max-width: 320px) {
