@@ -28,4 +28,4 @@ Restart Obsidian, or reload the app, then enable `KB Manager` under:
 
 Settings -> Community plugins -> Installed plugins.
 
-KB Manager starts in preview mode. It indexes the vault and shows the sidebar without writing generated files or managed sections until `Generated content writes` is enabled in the plugin settings.
+KB Manager starts in preview mode and indexes the vault without writing generated files or managed sections until `Generated content writes` is enabled in the plugin settings. Open the sidebar from the ribbon network icon or the `KB Manager: Open sidebar` command.
