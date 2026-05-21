@@ -122,6 +122,19 @@ export function findCleanupCandidates(
   return candidates.slice(0, limit);
 }
 
+export function cleanupCandidateKey(candidate: CleanupCandidate): string {
+  if (candidate.kind === 'orphan') return `orphan:${candidate.tag}`;
+  const [a = '', b = ''] = [...candidate.tags].sort();
+  return `near-duplicate:${a}::${b}`;
+}
+
+export function filterIgnoredCleanupCandidates(
+  candidates: CleanupCandidate[],
+  ignoredKeys: ReadonlySet<string>,
+): CleanupCandidate[] {
+  return candidates.filter(candidate => !ignoredKeys.has(cleanupCandidateKey(candidate)));
+}
+
 function candidateRank(c: CleanupCandidate): number {
   if (c.kind === 'orphan') return 0;
   return c.distance;

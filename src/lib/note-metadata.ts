@@ -77,6 +77,13 @@ export function parseNoteTags(input: string): string[] {
   return normalizeNoteTags(input.split(separator));
 }
 
+export function normalizeProjectTagInput(input: string): string {
+  const raw = input.trim().replace(/^#/, '');
+  if (raw === '') return '';
+  if (raw === 'project') return 'project';
+  return normalizeNoteTag(raw.includes('/') ? raw : `project/${raw}`);
+}
+
 export function coerceFrontmatterTags(value: unknown): string[] {
   if (Array.isArray(value)) return normalizeNoteTags(value.filter(isString));
   if (typeof value === 'string') return parseNoteTags(value);

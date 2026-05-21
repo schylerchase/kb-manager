@@ -3,6 +3,10 @@ import { FileRecord, FolderRecord, TagNode, HeadingRecord } from './lib/vault-in
 import { normalizeTags, buildTagTree, buildFlatTagMap, indexFolders } from './lib/tag-utils';
 import { isExcluded } from './lib/exclusions';
 
+export type RebuildScope =
+  | { kind: 'full' }
+  | { kind: 'dirty'; paths: string[] };
+
 /**
  * In-memory index of all vault files, folders, tags, and headings.
  * D-12: lives on the plugin instance (this.index). Created in onload(),
@@ -20,7 +24,7 @@ export default class VaultIndex {
   private derivedMapsDirty = false;
 
   /** D-11: single callback fired after every rebuild() and rebuildDirty(). */
-  onRebuildComplete: (() => void | Promise<void>) | null = null;
+  onRebuildComplete: ((scope: RebuildScope) => void | Promise<void>) | null = null;
 
   /**
    * Accepts a getter so settings reactivity works: if the user edits
@@ -47,7 +51,7 @@ export default class VaultIndex {
   /** D-08: delete removes the file from the index immediately, not mark-dirty. */
   remove(filePath: string): void {
     this.files.delete(filePath);
-    this.dirty.delete(filePath);
+    this.dirty.add(filePath);
     // Defer derived-map rebuild: a bulk delete (e.g. 500-note folder) fires
     // 500 sequential delete events, each O(n) if we rebuild eagerly. Mark
     // dirty and rebuild lazily before the next query.
@@ -95,7 +99,7 @@ export default class VaultIndex {
     }
     this._rebuildDerivedMaps();
     this.derivedMapsDirty = false;
-    await this.onRebuildComplete?.();
+    await this.onRebuildComplete?.({ kind: 'full' });
   }
 
   /**
@@ -109,8 +113,8 @@ export default class VaultIndex {
   async rebuildDirty(): Promise<void> {
     if (this.dirty.size === 0 && !this.derivedMapsDirty) return;
 
+    const dirtyPaths = new Set(this.dirty);
     if (this.dirty.size > 0) {
-      const dirtyPaths = new Set(this.dirty);
       this.dirty.clear();
       const excluded = this.excludedPaths;
 
@@ -132,7 +136,7 @@ export default class VaultIndex {
     }
     this._rebuildDerivedMaps();
     this.derivedMapsDirty = false;
-    await this.onRebuildComplete?.();
+    await this.onRebuildComplete?.({ kind: 'dirty', paths: [...dirtyPaths] });
   }
 
   // --- Query API (D-10) ---
@@ -199,7 +203,8 @@ export default class VaultIndex {
     }));
     const lastSlash = file.path.lastIndexOf('/');
     const folderPath = lastSlash === -1 ? '' : file.path.slice(0, lastSlash);
-    this.files.set(file.path, { path: file.path, tags, headings, folderPath });
+    const kbManaged = cache?.frontmatter?.['kb-managed'] === true;
+    this.files.set(file.path, { path: file.path, tags, headings, folderPath, kbManaged });
   }
 
   /** Rebuild folder map, tag tree, and flat tag map from the current files map. */

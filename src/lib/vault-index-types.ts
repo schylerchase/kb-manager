@@ -17,6 +17,7 @@ export interface FileRecord {
   tags: string[];
   headings: HeadingRecord[];
   folderPath: string;
+  kbManaged?: boolean;
 }
 
 /**

@@ -1,5 +1,11 @@
 import { describe, expect, it } from 'vitest';
-import { computeTagStats, findCleanupCandidates, levenshtein } from './tag-analytics';
+import {
+  cleanupCandidateKey,
+  computeTagStats,
+  filterIgnoredCleanupCandidates,
+  findCleanupCandidates,
+  levenshtein,
+} from './tag-analytics';
 
 function fakeMap(rows: Array<[string, string[]]>): Map<string, string[]> {
   return new Map(rows);
@@ -133,5 +139,39 @@ describe('findCleanupCandidates', () => {
       ['charlie', ['3.md']],
     ]);
     expect(findCleanupCandidates({ flatTagMap: map })).toEqual([]);
+  });
+
+  it('builds stable ignore keys for duplicate pairs regardless of order', () => {
+    const a = cleanupCandidateKey({
+      kind: 'near-duplicate',
+      tags: ['lemaitre', 'lamaitre'],
+      noteCounts: [5, 2],
+      distance: 1,
+    });
+    const b = cleanupCandidateKey({
+      kind: 'near-duplicate',
+      tags: ['lamaitre', 'lemaitre'],
+      noteCounts: [2, 5],
+      distance: 1,
+    });
+    expect(a).toBe(b);
+  });
+
+  it('filters cleanup candidates whose ignore key was saved', () => {
+    const candidates = findCleanupCandidates({
+      flatTagMap: fakeMap([
+        ['lemaitre', ['a.md', 'b.md', 'c.md', 'd.md', 'e.md']],
+        ['lamaitre', ['f.md', 'g.md']],
+      ]),
+    });
+    const duplicate = candidates.find(c => c.kind === 'near-duplicate');
+    expect(duplicate).toBeDefined();
+
+    const filtered = filterIgnoredCleanupCandidates(
+      candidates,
+      new Set([cleanupCandidateKey(duplicate!)]),
+    );
+
+    expect(filtered).not.toContain(duplicate);
   });
 });

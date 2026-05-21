@@ -15,20 +15,13 @@ export default class MocGenerator {
     private settings: KBManagerSettings,
     /** Bails out between folder iterations once the plugin is disabled. */
     private isUnloaded: () => boolean = () => false,
+    private onSelfModify: (path: string) => void = () => {},
   ) {}
 
   async run(): Promise<void> {
     for (const folderPath of this.index.getAllFolders()) {
       if (this.isUnloaded()) return;
-      if (isExcluded(folderPath, this.settings.excludedPaths)) continue;
-      const body = buildMocBody(this.buildInputForFolder(folderPath));
-      if (this.resolveFormat(folderPath) === 'dedicated') {
-        await this.writeDedicated(folderPath, body);
-        if (this.isUnloaded()) return;
-        await this.injectInline(folderPath, body, false);
-      } else {
-        await this.injectInline(folderPath, body, true);
-      }
+      await this.syncFolder(folderPath);
     }
     // Full-vault orphan sweep: catches MOC.md left behind in folders that
     // became empty, became excluded, or had their format flipped to inline.
@@ -36,6 +29,44 @@ export default class MocGenerator {
     // in `index.getAllFolders()`.
     if (this.isUnloaded()) return;
     await this.removeOrphanedDedicatedMocs();
+  }
+
+  async runForPaths(filePaths: ReadonlyArray<string>): Promise<void> {
+    for (const folderPath of this.affectedFolders(filePaths)) {
+      if (this.isUnloaded()) return;
+      await this.syncFolder(folderPath);
+    }
+  }
+
+  private affectedFolders(filePaths: ReadonlyArray<string>): string[] {
+    const folders = new Set<string>();
+    for (const filePath of filePaths) folders.add(this.folderPathFromPath(filePath));
+    return [...folders].sort();
+  }
+
+  private folderPathFromPath(filePath: string): string {
+    const lastSlash = filePath.lastIndexOf('/');
+    return lastSlash === -1 ? '' : filePath.slice(0, lastSlash);
+  }
+
+  private async syncFolder(folderPath: string): Promise<void> {
+    if (isExcluded(folderPath, this.settings.excludedPaths)) {
+      await this.removeDedicatedMocForFolder(folderPath);
+      return;
+    }
+    const mocPath = this.mocPathForFolder(folderPath);
+    if (!this.folderHasUserContent(folderPath, mocPath)) {
+      await this.removeDedicatedMocForFolder(folderPath);
+      return;
+    }
+    const body = buildMocBody(this.buildInputForFolder(folderPath));
+    if (this.resolveFormat(folderPath) === 'dedicated') {
+      await this.writeDedicated(folderPath, body);
+      if (this.isUnloaded()) return;
+      await this.injectInline(folderPath, body, false);
+    } else {
+      await this.injectInline(folderPath, body, true);
+    }
   }
 
   private async removeOrphanedDedicatedMocs(): Promise<void> {
@@ -56,10 +87,23 @@ export default class MocGenerator {
       const shouldKeep = hasUserContent && !excluded && wantsDedicated;
       if (shouldKeep) continue;
       try {
+        this.onSelfModify(file.path);
         await this.app.vault.trash(file, true);
       } catch (err) {
         console.warn(`KB Manager: failed to trash orphan MOC ${file.path}`, err);
       }
+    }
+  }
+
+  private async removeDedicatedMocForFolder(folderPath: string): Promise<void> {
+    const mocPath = this.mocPathForFolder(folderPath);
+    const existing = this.app.vault.getAbstractFileByPath(mocPath);
+    if (!(existing instanceof TFile) || !this.isKbManaged(existing)) return;
+    try {
+      this.onSelfModify(existing.path);
+      await this.app.vault.trash(existing, true);
+    } catch (err) {
+      console.warn(`KB Manager: failed to trash stale MOC ${existing.path}`, err);
     }
   }
 
@@ -76,6 +120,10 @@ export default class MocGenerator {
   private folderPathOf(file: TFile): string {
     const parentPath = file.parent?.path ?? '';
     return parentPath === '/' ? '' : parentPath;
+  }
+
+  private mocPathForFolder(folderPath: string): string {
+    return normalizePath(folderPath === '' ? MOC_BASENAME : `${folderPath}/${MOC_BASENAME}`);
   }
 
   private resolveFormat(folderPath: string): 'dedicated' | 'inline' {
@@ -105,7 +153,7 @@ export default class MocGenerator {
   }
 
   private async writeDedicated(folderPath: string, body: string): Promise<void> {
-    const mocPath = normalizePath(folderPath === '' ? MOC_BASENAME : `${folderPath}/${MOC_BASENAME}`);
+    const mocPath = this.mocPathForFolder(folderPath);
     const fullContent = buildDedicatedMocFile(folderPath, body);
     const existing = this.app.vault.getAbstractFileByPath(mocPath);
     if (existing instanceof TFile) {
@@ -113,9 +161,13 @@ export default class MocGenerator {
         console.warn(`KB Manager: skipping ${mocPath} - file lacks kb-managed frontmatter`);
         return;
       }
+      const current = await this.app.vault.cachedRead(existing);
+      if (current === fullContent) return;
+      this.onSelfModify(existing.path);
       await this.app.vault.process(existing, () => fullContent);
       return;
     }
+    this.onSelfModify(mocPath);
     await this.app.vault.create(mocPath, fullContent);
   }
 
@@ -134,12 +186,16 @@ export default class MocGenerator {
     const endDelim = buildDelimiter('moc', 'end');
     await this.app.vault.process(file, content => {
       if (isWriteSafe(content, 'moc')) {
-        return replaceDelimitedSection(content, 'moc', body.trimEnd());
+        const next = replaceDelimitedSection(content, 'moc', body.trimEnd());
+        if (next !== content) this.onSelfModify(file.path);
+        return next;
       }
       const hasAnyDelimiter = content.includes(startDelim) || content.includes(endDelim);
       if (!allowAutoInject || !this.settings.autoInject || hasAnyDelimiter) return content;
       const appended = `${content}\n\n${startDelim}\n${endDelim}\n`;
-      return replaceDelimitedSection(appended, 'moc', body.trimEnd());
+      const next = replaceDelimitedSection(appended, 'moc', body.trimEnd());
+      if (next !== content) this.onSelfModify(file.path);
+      return next;
     });
   }
 }

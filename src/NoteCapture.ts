@@ -9,6 +9,7 @@ import {
   type NewNoteKind,
   normalizeNoteFolderPath,
   normalizeNoteTags,
+  normalizeProjectTagInput,
   parseNoteTags,
   sanitizeNoteTitle,
 } from './lib/note-metadata';
@@ -57,7 +58,7 @@ export default class NoteCapture {
   }
 
   createNoteFromPrompt(folderPath: string, tags: string[] = [], kind: NewNoteKind = 'kb'): void {
-    new KBNoteTitleModal(this.app, folderPath, tags, kind, request => {
+    new KBNoteTitleModal(this.app, folderPath, tags, kind, this.getProjectTags(), request => {
       this.createNote(request.folderPath, request.title, request.tags, request.kind).catch(err => this.reportError('create note', err));
     }).open();
   }
@@ -161,6 +162,16 @@ export default class NoteCapture {
     return tags.map(tag => `#${tag}`).join(', ');
   }
 
+  private getProjectTags(): string[] {
+    const tags = new Set<string>();
+    for (const file of this.index.getAllFiles()) {
+      for (const tag of file.tags) {
+        if (tag === 'project' || tag.startsWith('project/')) tags.add(tag);
+      }
+    }
+    return [...tags].sort();
+  }
+
   private kindLabel(kind: NewNoteKind): string {
     if (kind === 'moc') return 'MOC';
     if (kind === 'toc') return 'TOC';
@@ -201,35 +212,69 @@ type KBNoteCreateRequest = {
   kind: NewNoteKind;
 };
 
+type KBNoteDraft = {
+  title: string;
+  folderPath: string;
+  projectTag: string;
+  tagInput: string;
+  kind: NewNoteKind;
+};
+
 class KBNoteTitleModal extends Modal {
   constructor(
     app: App,
     private folderPath: string,
     private tags: string[],
     private kind: NewNoteKind,
+    private projectTags: string[],
     private onSubmit: (request: KBNoteCreateRequest) => void
   ) {
     super(app);
   }
 
   onOpen(): void {
-    let title = '';
-    let folderPath = this.folderPath;
-    let kind = this.kind;
+    const draft: KBNoteDraft = {
+      title: '',
+      folderPath: this.folderPath,
+      projectTag: this.initialProjectTag(),
+      tagInput: this.initialOtherTags().join(', '),
+      kind: this.kind,
+    };
     this.titleEl.setText('New KB note');
     this.contentEl.empty();
+    this.contentEl.addClass('kb-note-create-modal');
+    const projectListId = this.createProjectDatalist();
     new Setting(this.contentEl)
       .setName('Title')
       .addText(text => {
-        text.setPlaceholder('MCP Goals').onChange(value => { title = value; });
-        text.inputEl.addEventListener('keydown', event => this.handleEnter(event, title, folderPath, kind));
+        text.setPlaceholder('MCP Goals').onChange(value => { draft.title = value; });
+        text.inputEl.addClass('kb-note-create-input');
+        text.inputEl.addEventListener('keydown', event => this.handleEnter(event, draft));
       });
     new Setting(this.contentEl)
-      .setName('Folder')
-      .setDesc('Vault-relative folder path. Leave blank for vault root.')
+      .setName('Category')
+      .setDesc('Vault-relative folder/category path. Leave blank for vault root.')
       .addText(text => {
-        text.setPlaceholder('Projects/MCP').setValue(folderPath).onChange(value => { folderPath = this.cleanFolderPath(value); });
-        text.inputEl.addEventListener('keydown', event => this.handleEnter(event, title, folderPath, kind));
+        text.setPlaceholder('Projects/MCP').setValue(draft.folderPath).onChange(value => { draft.folderPath = this.cleanFolderPath(value); });
+        text.inputEl.addClass('kb-note-create-input');
+        text.inputEl.addEventListener('keydown', event => this.handleEnter(event, draft));
+      });
+    new Setting(this.contentEl)
+      .setName('Project')
+      .setDesc('Optional project tag. "Halo MCP" becomes #project/halo-mcp.')
+      .addText(text => {
+        text.setPlaceholder('project/halo-mcp').setValue(draft.projectTag).onChange(value => { draft.projectTag = value; });
+        text.inputEl.addClass('kb-note-create-input');
+        if (projectListId) text.inputEl.setAttribute('list', projectListId);
+        text.inputEl.addEventListener('keydown', event => this.handleEnter(event, draft));
+      });
+    new Setting(this.contentEl)
+      .setName('Tags')
+      .setDesc('Optional extra tags, separated by commas.')
+      .addText(text => {
+        text.setPlaceholder('reference, vendor').setValue(draft.tagInput).onChange(value => { draft.tagInput = value; });
+        text.inputEl.addClass('kb-note-create-input');
+        text.inputEl.addEventListener('keydown', event => this.handleEnter(event, draft));
       });
     new Setting(this.contentEl)
       .setName('Type')
@@ -238,32 +283,51 @@ class KBNoteTitleModal extends Modal {
           .addOption('kb', 'KB note')
           .addOption('moc', 'MOC note')
           .addOption('toc', 'TOC note')
-          .setValue(kind)
-          .onChange(value => { kind = value as NewNoteKind; });
+          .setValue(draft.kind)
+          .onChange(value => { draft.kind = value as NewNoteKind; });
       });
     new Setting(this.contentEl).addButton(button =>
-      button.setButtonText('Create').setCta().onClick(() => this.submit(title, folderPath, kind))
+      button.setButtonText('Create').setCta().onClick(() => this.submit(draft))
     );
   }
 
-  private handleEnter(event: KeyboardEvent, title: string, folderPath: string, kind: NewNoteKind): void {
+  private handleEnter(event: KeyboardEvent, draft: KBNoteDraft): void {
     if (event.key !== 'Enter') return;
     event.preventDefault();
-    this.submit(title, folderPath, kind);
+    this.submit(draft);
   }
 
   private cleanFolderPath(folderPath: string): string {
     return normalizeNoteFolderPath(folderPath);
   }
 
-  private submit(title: string, folderPath: string, kind: NewNoteKind): void {
+  private submit(draft: KBNoteDraft): void {
+    const projectTag = normalizeProjectTagInput(draft.projectTag);
+    const tags = normalizeNoteTags([...this.tags, projectTag, ...parseNoteTags(draft.tagInput)]);
     this.close();
     this.onSubmit({
-      title: sanitizeNoteTitle(title),
-      folderPath: this.cleanFolderPath(folderPath),
-      tags: this.tags,
-      kind,
+      title: sanitizeNoteTitle(draft.title),
+      folderPath: this.cleanFolderPath(draft.folderPath),
+      tags,
+      kind: draft.kind,
     });
+  }
+
+  private initialProjectTag(): string {
+    return this.tags.find(tag => tag === 'project' || tag.startsWith('project/')) ?? '';
+  }
+
+  private initialOtherTags(): string[] {
+    return this.tags.filter(tag => tag !== 'project' && !tag.startsWith('project/'));
+  }
+
+  private createProjectDatalist(): string {
+    if (this.projectTags.length === 0) return '';
+    const id = `kb-project-tags-${Date.now().toString(36)}`;
+    const list = this.contentEl.createEl('datalist');
+    list.id = id;
+    for (const tag of this.projectTags) list.createEl('option', { value: tag });
+    return id;
   }
 }
 

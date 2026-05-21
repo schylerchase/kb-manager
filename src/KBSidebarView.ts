@@ -1,13 +1,23 @@
 import { ItemView, Menu, Notice, TFile, WorkspaceLeaf, normalizePath, setIcon } from 'obsidian';
 import type KBManagerPlugin from './main';
-import { FileEntry, FolderTreeNode, TagTreeViewNode, buildFolderTree, buildScopedTagHierarchy, buildTagViewTree, countFilesInFolderScope, countPathsInFolderScope, isFileInFolderScope } from './lib/sidebar-data';
+import { FileEntry, FolderTreeNode, TagTreeViewNode, buildFolderTree, buildScopedTagHierarchy, buildTagViewTree, countFilesInFolderScope, countPathsInFolderScope, filterUserFiles, isFileInFolderScope } from './lib/sidebar-data';
+import type { CleanupCandidate } from './lib/tag-analytics';
 import { isExcluded } from './lib/exclusions';
 import { renderTagScope } from './lib/sidebar-ui';
 import { addNewNoteAction, addTagNoteActions, getFilesNeedingTags, renderNeedsTags } from './lib/sidebar-note-actions';
+import type { FileRecord } from './lib/vault-index-types';
 
 export const KB_SIDEBAR_VIEW_TYPE = 'kb-manager-sidebar';
 
-type SidebarTab = 'browse' | 'tags' | 'review';
+type SidebarTab = 'dashboard' | 'browse' | 'tags' | 'review';
+const CLEANUP_PAGE_SIZE = 5;
+
+type DashboardRow = {
+  key: string;
+  title: string;
+  meta: string;
+  count: number;
+};
 
 type AppWithSearch = {
   internalPlugins?: { getPluginById(id: string): { instance?: { openGlobalSearch?(query: string): void } } | null };
@@ -20,8 +30,9 @@ export default class KBSidebarView extends ItemView {
   private expandedTags = new Set<string>();
   private expandedTagResults = new Set<string>();
   private isNeedsTagsExpanded = true;
-  private activeTab: SidebarTab = 'browse';
+  private activeTab: SidebarTab = 'dashboard';
   private selectedFolderPath = '';
+  private cleanupVisibleLimit = CLEANUP_PAGE_SIZE;
   private pulseKey: string | null = null;
 
   constructor(leaf: WorkspaceLeaf, private plugin: KBManagerPlugin) { super(leaf); }
@@ -95,20 +106,23 @@ export default class KBSidebarView extends ItemView {
         .some(folder => folder === selected || folder.startsWith(prefix));
       if (!stillVisible) this.selectedFolderPath = '';
     }
+    const dashboardScroll = container.querySelector<HTMLElement>('.kb-section-dashboard')?.scrollTop ?? 0;
     const mocScroll = container.querySelector<HTMLElement>('.kb-section-moc')?.scrollTop ?? 0;
     const tagScroll = container.querySelector<HTMLElement>('.kb-section-tags')?.scrollTop ?? 0;
     const reviewScroll = container.querySelector<HTMLElement>('.kb-section-review')?.scrollTop ?? 0;
     container.empty();
     container.addClass('kb-manager-sidebar');
     this.renderTabs(container);
-    if (this.activeTab === 'browse') {
+    if (this.activeTab === 'dashboard') {
+      this.renderDashboardSection(container);
+    } else if (this.activeTab === 'browse') {
       this.renderMocSection(container);
     } else if (this.activeTab === 'tags') {
       this.renderTagsSection(container);
-      this.renderTagCleanupSection(container);
     } else {
       this.renderReviewSection(container);
     }
+    container.querySelector<HTMLElement>('.kb-section-dashboard')?.scrollTo({ top: dashboardScroll });
     container.querySelector<HTMLElement>('.kb-section-moc')?.scrollTo({ top: mocScroll });
     container.querySelector<HTMLElement>('.kb-section-tags')?.scrollTo({ top: tagScroll });
     container.querySelector<HTMLElement>('.kb-section-review')?.scrollTo({ top: reviewScroll });
@@ -118,6 +132,7 @@ export default class KBSidebarView extends ItemView {
 
   private renderTabs(parent: HTMLElement): void {
     const tabs = parent.createDiv({ cls: 'kb-tabs' });
+    this.renderTab(tabs, 'dashboard', 'Dashboard');
     this.renderTab(tabs, 'browse', 'Browse');
     this.renderTab(tabs, 'tags', 'Tags');
     this.renderTab(tabs, 'review', 'Review');
@@ -132,6 +147,170 @@ export default class KBSidebarView extends ItemView {
       this.activeTab = tab;
       this.render();
     });
+  }
+
+  private renderDashboardSection(parent: HTMLElement): void {
+    const section = parent.createDiv({ cls: 'kb-section kb-section-dashboard' });
+    section.createEl('h3', { text: 'Dashboard', cls: 'kb-section-header' });
+    const files = filterUserFiles(this.plugin.index.getAllFiles());
+    const categories = this.getDashboardCategories(files);
+    const projects = this.getDashboardProjects(files);
+    const needsTags = getFilesNeedingTags(files, '', path => this.getFile(path), file => this.isKbManaged(file));
+    const cleanupCount = this.plugin.getTagCleanupCandidates().length;
+
+    this.renderDashboardStats(section, [
+      { label: 'Notes', value: files.length },
+      { label: 'Categories', value: categories.length },
+      { label: 'Projects', value: projects.length },
+      { label: 'Need tags', value: needsTags.length },
+    ]);
+    this.renderDashboardActions(section, cleanupCount);
+    this.renderDashboardCategoryPanel(section, categories);
+    this.renderDashboardProjectPanel(section, projects);
+  }
+
+  private renderDashboardStats(parent: HTMLElement, stats: Array<{ label: string; value: number }>): void {
+    const grid = parent.createDiv({ cls: 'kb-dashboard-stats' });
+    for (const stat of stats) {
+      const card = grid.createDiv({ cls: 'kb-dashboard-stat' });
+      card.createSpan({ cls: 'kb-dashboard-stat-value', text: String(stat.value) });
+      card.createSpan({ cls: 'kb-dashboard-stat-label', text: stat.label });
+    }
+  }
+
+  private renderDashboardActions(parent: HTMLElement, cleanupCount: number): void {
+    const actions = parent.createDiv({ cls: 'kb-dashboard-actions' });
+    this.renderDashboardActionButton(actions, 'file-plus', 'New note', () => {
+      this.plugin.createNoteFromPrompt(this.selectedFolderPath, []);
+    });
+    this.renderDashboardActionButton(actions, 'folder-tree', 'Categories', () => this.openDashboardTab('browse'));
+    this.renderDashboardActionButton(actions, 'tags', 'Projects', () => this.openDashboardTab('tags'));
+    this.renderDashboardActionButton(actions, 'list-checks', cleanupCount > 0 ? `Review (${cleanupCount})` : 'Review', () => this.openDashboardTab('review'));
+  }
+
+  private renderDashboardCategoryPanel(parent: HTMLElement, categories: DashboardRow[]): void {
+    const panel = this.createDashboardPanel(parent, 'Categories');
+    if (categories.length === 0) {
+      panel.createEl('p', { cls: 'kb-empty', text: 'No categories indexed yet' });
+      return;
+    }
+    const list = panel.createDiv({ cls: 'kb-dashboard-list' });
+    for (const row of categories.slice(0, 6)) {
+      this.renderDashboardRow(list, row, [
+        { icon: 'tags', label: 'Tags', run: () => this.openDashboardCategory(row.key, 'tags') },
+        { icon: 'file-plus', label: 'New', run: () => this.plugin.createNoteFromPrompt(row.key, []) },
+      ]);
+    }
+  }
+
+  private renderDashboardProjectPanel(parent: HTMLElement, projects: DashboardRow[]): void {
+    const panel = this.createDashboardPanel(parent, 'Projects');
+    if (projects.length === 0) {
+      panel.createEl('p', { cls: 'kb-empty', text: 'No project tags yet' });
+      return;
+    }
+    const list = panel.createDiv({ cls: 'kb-dashboard-list' });
+    for (const row of projects.slice(0, 6)) {
+      this.renderDashboardRow(list, row, [
+        { icon: 'list', label: 'Open', run: () => this.openDashboardProject(row.key) },
+        { icon: 'file-plus', label: 'New', run: () => this.plugin.createNoteFromPrompt(this.selectedFolderPath, [row.key]) },
+      ]);
+    }
+  }
+
+  private createDashboardPanel(parent: HTMLElement, title: string): HTMLElement {
+    const panel = parent.createDiv({ cls: 'kb-dashboard-panel' });
+    panel.createEl('h4', { cls: 'kb-dashboard-panel-title', text: title });
+    return panel;
+  }
+
+  private renderDashboardRow(
+    parent: HTMLElement,
+    row: DashboardRow,
+    actions: Array<{ icon: string; label: string; run: () => void }>
+  ): void {
+    const item = parent.createDiv({ cls: 'kb-dashboard-row' });
+    const main = item.createDiv({ cls: 'kb-dashboard-row-main' });
+    main.createSpan({ cls: 'kb-dashboard-row-title', text: row.title });
+    main.createSpan({ cls: 'kb-dashboard-row-meta', text: row.meta });
+    item.createSpan({ cls: 'kb-dashboard-row-count', text: String(row.count) });
+    const actionWrap = item.createDiv({ cls: 'kb-dashboard-row-actions' });
+    for (const action of actions) this.renderDashboardRowAction(actionWrap, action.icon, action.label, action.run);
+  }
+
+  private renderDashboardActionButton(parent: HTMLElement, iconName: string, label: string, activate: () => void): void {
+    const button = parent.createEl('button', { cls: 'kb-dashboard-action' });
+    const icon = button.createSpan({ cls: 'kb-action-button-icon' });
+    setIcon(icon, iconName);
+    button.createSpan({ text: label });
+    button.addEventListener('click', activate);
+  }
+
+  private renderDashboardRowAction(parent: HTMLElement, iconName: string, label: string, activate: () => void): void {
+    const button = parent.createEl('button', { cls: 'kb-dashboard-row-action' });
+    const icon = button.createSpan({ cls: 'kb-action-button-icon' });
+    setIcon(icon, iconName);
+    button.createSpan({ text: label });
+    button.addEventListener('click', activate);
+  }
+
+  private getDashboardCategories(files: FileRecord[]): DashboardRow[] {
+    const counts = new Map<string, number>();
+    for (const file of files) {
+      const key = file.folderPath || '';
+      if (key === '') continue;
+      counts.set(key, (counts.get(key) ?? 0) + 1);
+    }
+    return this.dashboardRowsFromCounts(counts, key => key.split('/').pop() || key);
+  }
+
+  private getDashboardProjects(files: FileRecord[]): DashboardRow[] {
+    const counts = new Map<string, number>();
+    for (const file of files) {
+      for (const tag of file.tags) {
+        if (tag === 'project' || tag.startsWith('project/')) counts.set(tag, (counts.get(tag) ?? 0) + 1);
+      }
+    }
+    return this.dashboardRowsFromCounts(counts, key => `#${key}`);
+  }
+
+  private dashboardRowsFromCounts(counts: Map<string, number>, titleFor: (key: string) => string): DashboardRow[] {
+    return [...counts.entries()]
+      .sort((a, b) => b[1] - a[1] || a[0].toLowerCase().localeCompare(b[0].toLowerCase()))
+      .map(([key, count]) => ({
+        key,
+        title: titleFor(key),
+        meta: key,
+        count,
+      }));
+  }
+
+  private openDashboardTab(tab: SidebarTab): void {
+    this.activeTab = tab;
+    this.render();
+  }
+
+  private openDashboardCategory(folderPath: string, tab: SidebarTab): void {
+    this.selectedFolderPath = folderPath;
+    if (folderPath !== '') this.expandedFolders.add(folderPath);
+    this.activeTab = tab;
+    this.pulseKey = `folder:${folderPath}`;
+    this.render();
+  }
+
+  private openDashboardProject(tag: string): void {
+    this.expandTagParents(tag);
+    this.expandedTagResults.add(tag);
+    this.activeTab = 'tags';
+    this.pulseKey = `tag:${tag}`;
+    this.render();
+  }
+
+  private expandTagParents(tag: string): void {
+    const parts = tag.split('/');
+    for (let i = 1; i < parts.length; i += 1) {
+      this.expandedTags.add(parts.slice(0, i).join('/'));
+    }
   }
 
   private renderMocSection(parent: HTMLElement): void {
@@ -254,23 +433,17 @@ export default class KBSidebarView extends ItemView {
     const needsTags = getFilesNeedingTags(files, this.selectedFolderPath, path => this.getFile(path), file => this.isKbManaged(file));
     this.renderReviewSummary(section, needsTags.length);
     this.renderReviewActions(section);
+    this.renderTagCleanupSection(section);
     if (needsTags.length > 0) this.renderNeedsTagsSection(section, needsTags);
     else section.createEl('p', { cls: 'kb-empty', text: 'No untagged notes in scope' });
   }
 
-  /**
-   * Tag cleanup panel rendered inside its own section in the Tags tab.
-   * Previously lived under Review; relocated so all tag-management
-   * surfaces are in one place.
-   */
   private renderTagCleanupSection(parent: HTMLElement): void {
-    const section = parent.createDiv({ cls: 'kb-section kb-section-tag-cleanup' });
-    section.createEl('h3', { text: 'Cleanup', cls: 'kb-section-header' });
+    const section = parent.createDiv({ cls: 'kb-review-cleanup' });
+    section.createEl('h4', { text: 'Cleanup', cls: 'kb-section-subheader' });
     section.createEl('p', {
       cls: 'kb-section-intro',
-      text:
-        'Tags that may need attention: only used on 1 note (often typos or stale), ' +
-        'or look almost identical to another tag. Rename or delete from here.',
+      text: 'Review likely stale, typo, or duplicate tags before renaming, merging, or deleting.',
     });
     this.renderTagCleanupPanel(section);
   }
@@ -282,13 +455,35 @@ export default class KBSidebarView extends ItemView {
       return;
     }
     const list = parent.createDiv({ cls: 'kb-tag-cleanup-list' });
-    for (const candidate of candidates) {
+    const visible = candidates.slice(0, this.cleanupVisibleLimit);
+    for (const candidate of visible) {
       if (candidate.kind === 'orphan') this.renderOrphanCandidate(list, candidate);
       else this.renderDuplicateCandidate(list, candidate);
     }
+    this.renderCleanupPager(parent, candidates.length, visible.length);
   }
 
-  private renderOrphanCandidate(parent: HTMLElement, candidate: { kind: 'orphan'; tag: string; noteCount: number }): void {
+  private renderCleanupPager(parent: HTMLElement, total: number, visible: number): void {
+    if (total <= CLEANUP_PAGE_SIZE) return;
+    const controls = parent.createDiv({ cls: 'kb-cleanup-pager' });
+    controls.createSpan({ cls: 'kb-cleanup-pager-count', text: `${visible} of ${total}` });
+    if (visible < total) {
+      const more = controls.createEl('button', { text: 'Show more', cls: 'kb-cleanup-pager-btn' });
+      more.addEventListener('click', () => {
+        this.cleanupVisibleLimit = Math.min(total, this.cleanupVisibleLimit + CLEANUP_PAGE_SIZE);
+        this.render();
+      });
+    }
+    if (visible > CLEANUP_PAGE_SIZE) {
+      const fewer = controls.createEl('button', { text: 'Show fewer', cls: 'kb-cleanup-pager-btn' });
+      fewer.addEventListener('click', () => {
+        this.cleanupVisibleLimit = CLEANUP_PAGE_SIZE;
+        this.render();
+      });
+    }
+  }
+
+  private renderOrphanCandidate(parent: HTMLElement, candidate: Extract<CleanupCandidate, { kind: 'orphan' }>): void {
     const row = parent.createDiv({ cls: 'kb-cleanup-row kb-cleanup-orphan' });
     const text = row.createDiv({ cls: 'kb-cleanup-text' });
     text.createSpan({ cls: 'kb-cleanup-label', text: `#${candidate.tag}` });
@@ -296,9 +491,10 @@ export default class KBSidebarView extends ItemView {
     const actions = row.createDiv({ cls: 'kb-cleanup-actions' });
     this.renderCleanupActionButton(actions, 'pencil', 'Rename', () => this.plugin.renameTagWithConfirm(candidate.tag));
     this.renderCleanupActionButton(actions, 'trash-2', 'Delete', () => this.plugin.deleteTagEverywhereWithConfirm(candidate.tag));
+    this.renderCleanupActionButton(actions, 'eye-off', 'Ignore', () => this.ignoreCleanupCandidate(candidate));
   }
 
-  private renderDuplicateCandidate(parent: HTMLElement, candidate: { kind: 'near-duplicate'; tags: string[]; noteCounts: number[]; distance: number }): void {
+  private renderDuplicateCandidate(parent: HTMLElement, candidate: Extract<CleanupCandidate, { kind: 'near-duplicate' }>): void {
     const row = parent.createDiv({ cls: 'kb-cleanup-row kb-cleanup-duplicate' });
     const text = row.createDiv({ cls: 'kb-cleanup-text' });
     text.createSpan({
@@ -320,6 +516,12 @@ export default class KBSidebarView extends ItemView {
       // Use renameTag semantics: drop → keep
       await this.plugin.mergeTagsDirectly(dropTag, keepTag);
     });
+    this.renderCleanupActionButton(actions, 'eye-off', 'Ignore', () => this.ignoreCleanupCandidate(candidate));
+  }
+
+  private async ignoreCleanupCandidate(candidate: CleanupCandidate): Promise<void> {
+    await this.plugin.ignoreTagCleanupCandidate(candidate);
+    this.render();
   }
 
   private renderCleanupActionButton(parent: HTMLElement, icon: string, label: string, activate: () => void | Promise<void>): void {
@@ -328,7 +530,9 @@ export default class KBSidebarView extends ItemView {
     setIcon(iconEl, icon);
     btn.createSpan({ text: label });
     btn.addEventListener('click', () => {
-      void activate();
+      void Promise.resolve(activate()).catch(err =>
+        console.error('KB Manager: cleanup action failed', err),
+      );
     });
   }
 

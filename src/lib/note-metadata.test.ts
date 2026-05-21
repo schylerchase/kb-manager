@@ -7,6 +7,7 @@ import {
   mergeTags,
   normalizeNoteFolderPath,
   normalizeNoteTag,
+  normalizeProjectTagInput,
   parseNoteTags,
   sanitizeNoteTitle,
 } from './note-metadata';
@@ -23,6 +24,13 @@ describe('note metadata helpers', () => {
       'mcp',
     ]);
     expect(parseNoteTags('mcp MCP')).toEqual(['mcp']);
+  });
+
+  it('normalizes project shorthand for note creation', () => {
+    expect(normalizeProjectTagInput('Halo MCP')).toBe('project/halo-mcp');
+    expect(normalizeProjectTagInput('#project/HaloMCP')).toBe('project/halomcp');
+    expect(normalizeProjectTagInput('#project')).toBe('project');
+    expect(normalizeProjectTagInput('')).toBe('');
   });
 
   it('coerces frontmatter tags from common YAML shapes', () => {

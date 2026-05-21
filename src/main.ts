@@ -6,8 +6,9 @@ import MocGenerator from './MocGenerator';
 import NoteCapture from './NoteCapture';
 import TagManager from './TagManager';
 import TocGenerator from './TocGenerator';
-import VaultIndex from './VaultIndex';
+import VaultIndex, { type RebuildScope } from './VaultIndex';
 import { buildDelimiter, isWriteSafe, type DelimiterType } from './lib/delimiter';
+import { DebouncedRebuild } from './lib/debounced-rebuild';
 import { TagMutator, createTagMutator } from './lib/tag-mutator';
 import { untagActiveFile } from './commands/untag-file';
 import { deleteTagEverywhere } from './commands/delete-tag';
@@ -15,7 +16,13 @@ import { DeleteTagConfirmModal } from './commands/delete-tag-modal';
 import { TagPickerModal } from './commands/tag-picker-modal';
 import { previewRename, renameTagEverywhere } from './commands/rename-tag';
 import { RenameTagModal } from './commands/rename-tag-modal';
-import { computeTagStats, findCleanupCandidates } from './lib/tag-analytics';
+import {
+  cleanupCandidateKey,
+  computeTagStats,
+  filterIgnoredCleanupCandidates,
+  findCleanupCandidates,
+  type CleanupCandidate,
+} from './lib/tag-analytics';
 import { TagStatsModal } from './commands/tag-stats-modal';
 import { runBulkTagOps, type BulkSelector } from './commands/bulk-tag';
 import { BulkTagModal } from './commands/bulk-tag-modal';
@@ -43,6 +50,8 @@ export default class KBManagerPlugin extends Plugin {
   private schedulerHandle: number | null = null;
   private rebuildLock: Promise<void> | null = null;
   private queuedManualRebuild: Promise<void> | null = null;
+  private microRebuild!: DebouncedRebuild;
+  private selfModifyCounts = new Map<string, number>();
   private statusBarItem: HTMLElement | null = null;
   /** Set true in onunload so deferred work (vault writes, generators) can bail. */
   unloaded = false;
@@ -72,6 +81,11 @@ export default class KBManagerPlugin extends Plugin {
     // Pass a getter so the index always sees the live excludedPaths array —
     // settings tab reassigns the field, so a cached reference goes stale.
     this.index = new VaultIndex(this.app, () => this.settings.excludedPaths);
+    this.microRebuild = new DebouncedRebuild(
+      () => this.requestDirtyRebuild(),
+      err => console.error('KB Manager: micro rebuild failed', err),
+      450,
+    );
     this.tagManager = new TagManager(this.index);
     // Race-suppression for tag mutations: pre-mark the file dirty BEFORE the
     // write so the rebuild scheduler sees fresh state on the next tick.
@@ -82,21 +96,24 @@ export default class KBManagerPlugin extends Plugin {
         getFilesWithTag: (tag) => this.index.getFilesWithTag(tag),
         invalidateTags: (tags) => {
           this.index.invalidateTags(tags);
-          void this.requestDirtyRebuild();
+          this.scheduleMicroRebuild();
         },
       },
-      (path) => this.index.markDirty(path),
+      (path) => this.markSelfModify(path),
     );
     const isUnloaded = () => this.unloaded;
     this.noteCapture = new NoteCapture(
       this.app,
       this.index,
       this.tagManager,
-      () => this.requestDirtyRebuild(),
+      () => {
+        this.scheduleMicroRebuild();
+        return Promise.resolve();
+      },
     );
     this.kbReminder = new KBReminder(this.app, this.settings);
-    this.mocGenerator = new MocGenerator(this.app, this.index, this.settings, isUnloaded);
-    this.tocGenerator = new TocGenerator(this.app, this.index, this.settings, isUnloaded);
+    this.mocGenerator = new MocGenerator(this.app, this.index, this.settings, isUnloaded, path => this.markSelfModify(path));
+    this.tocGenerator = new TocGenerator(this.app, this.index, this.settings, isUnloaded, path => this.markSelfModify(path));
 
     this.addSettingTab(new KBSettingsTab(this.app, this));
 
@@ -110,7 +127,7 @@ export default class KBManagerPlugin extends Plugin {
       this.addManualRebuildControls();
       this.addSidebarControls();
       this.registerVaultEvents();
-      this.index.onRebuildComplete = () => this.runGenerators();
+      this.index.onRebuildComplete = (scope) => this.runGenerators(scope);
 
       this.runWithLock(() => this.index.rebuild())
         .catch(err => console.error('KB Manager: initial rebuild failed', err))
@@ -199,8 +216,32 @@ export default class KBManagerPlugin extends Plugin {
     return this.runWithLock(() => this.index.rebuildDirty());
   }
 
+  private scheduleMicroRebuild(): void {
+    if (this.unloaded) return;
+    this.microRebuild.schedule();
+  }
+
+  private markSelfModify(path: string): void {
+    this.index.markDirty(path);
+    this.selfModifyCounts.set(path, (this.selfModifyCounts.get(path) ?? 0) + 1);
+    window.setTimeout(() => {
+      this.consumeSelfModify(path);
+    }, 5000);
+  }
+
+  private consumeSelfModify(path: string): boolean {
+    const count = this.selfModifyCounts.get(path);
+    if (!count) return false;
+    if (count === 1) this.selfModifyCounts.delete(path);
+    else this.selfModifyCounts.set(path, count - 1);
+    return true;
+  }
+
   async loadSettings(): Promise<void> {
     this.settings = Object.assign({}, DEFAULT_SETTINGS, await this.loadData());
+    if (!Array.isArray(this.settings.ignoredTagCleanupCandidates)) {
+      this.settings.ignoredTagCleanupCandidates = [];
+    }
   }
 
   async saveSettings(): Promise<void> {
@@ -702,12 +743,24 @@ export default class KBManagerPlugin extends Plugin {
   }
 
   /** Surface cleanup candidates (orphan + near-duplicate tags). Used by Review tab. */
-  getTagCleanupCandidates() {
+  getTagCleanupCandidates(): CleanupCandidate[] {
     const flatTagMap = new Map<string, string[]>();
     for (const t of this.index.getTagTree().keys()) {
       flatTagMap.set(t, this.index.getFilesWithTag(t));
     }
-    return findCleanupCandidates({ flatTagMap });
+    const ignored = new Set(this.settings.ignoredTagCleanupCandidates ?? []);
+    return filterIgnoredCleanupCandidates(findCleanupCandidates({ flatTagMap }), ignored);
+  }
+
+  async ignoreTagCleanupCandidate(candidate: CleanupCandidate): Promise<void> {
+    const key = cleanupCandidateKey(candidate);
+    const ignored = this.settings.ignoredTagCleanupCandidates ?? [];
+    if (!ignored.includes(key)) {
+      this.settings.ignoredTagCleanupCandidates = [...ignored, key];
+      await this.saveSettings();
+    }
+    this.notifySidebarRefresh();
+    new Notice('KB Manager: cleanup suggestion ignored');
   }
 
   private addSidebarControls(): void {
@@ -745,15 +798,23 @@ export default class KBManagerPlugin extends Plugin {
     }
   }
 
-  private async runGenerators(): Promise<void> {
+  private async runGenerators(scope: RebuildScope = { kind: 'full' }): Promise<void> {
     if (this.unloaded) return;
     if (!this.settings.generatedWritesEnabled) {
       this.notifySidebarRefresh();
       return;
     }
-    await this.mocGenerator.run();
+    if (scope.kind === 'dirty') {
+      await this.mocGenerator.runForPaths(scope.paths);
+    } else {
+      await this.mocGenerator.run();
+    }
     if (this.unloaded) return;
-    await this.tocGenerator.run();
+    if (scope.kind === 'dirty') {
+      await this.tocGenerator.runForPaths(scope.paths);
+    } else {
+      await this.tocGenerator.run();
+    }
     if (this.unloaded) return;
     this.notifySidebarRefresh();
   }
@@ -818,6 +879,7 @@ export default class KBManagerPlugin extends Plugin {
       this.app.vault.on('modify', (file) => {
         if (!(file instanceof TFile)) return;
         this.index.markDirty(file.path);
+        if (!this.consumeSelfModify(file.path)) this.scheduleMicroRebuild();
         void this.applyTagRules(file, 'on-modify').catch((err) =>
           console.error('KB Manager: tag rules on-modify failed', err),
         );
@@ -827,6 +889,7 @@ export default class KBManagerPlugin extends Plugin {
       this.app.vault.on('create', (file) => {
         if (!(file instanceof TFile)) return;
         this.index.markDirty(file.path);
+        if (!this.consumeSelfModify(file.path)) this.scheduleMicroRebuild();
         this.noteCapture
           .initializeCreatedNote(file, this.settings.initializeNoteProperties, this.settings.excludedPaths)
           .catch(err => console.error('KB Manager: initialize note properties failed', err));
@@ -840,6 +903,7 @@ export default class KBManagerPlugin extends Plugin {
         this.index.remove(oldPath);
         if (file instanceof TFile) {
           this.index.markDirty(file.path);
+          if (!this.consumeSelfModify(file.path)) this.scheduleMicroRebuild();
           // Obsidian's MetadataCache often lags behind a rename — the next
           // rebuildDirty would index the file with empty tags/headings.
           // Mark it as awaiting so we re-mark dirty when cache catches up.
@@ -852,11 +916,15 @@ export default class KBManagerPlugin extends Plugin {
         if (!(file instanceof TFile)) return;
         if (!this.metadataAwaitingRename.delete(file.path)) return;
         this.index.markDirty(file.path);
+        this.scheduleMicroRebuild();
       })
     );
     this.registerEvent(
       this.app.vault.on('delete', (file) => {
-        if (file instanceof TFile) this.index.remove(file.path);
+        if (file instanceof TFile) {
+          this.index.remove(file.path);
+          if (!this.consumeSelfModify(file.path)) this.scheduleMicroRebuild();
+        }
       })
     );
   }

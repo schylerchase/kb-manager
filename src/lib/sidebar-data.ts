@@ -45,6 +45,10 @@ export function countPathsInFolderScope(paths: string[], folderPath: string): nu
   return paths.filter(path => isFileInFolderScope(path, folderPath)).length;
 }
 
+export function filterUserFiles(files: FileRecord[]): FileRecord[] {
+  return files.filter(file => !file.kbManaged);
+}
+
 function lastSegment(path: string): string {
   if (path === '') return '';
   const idx = path.lastIndexOf('/');

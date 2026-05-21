@@ -14,6 +14,7 @@ export default class TocGenerator {
     private index: VaultIndex,
     private settings: KBManagerSettings,
     private isUnloaded: () => boolean = () => false,
+    private onSelfModify: (path: string) => void = () => {},
   ) {}
 
   async run(): Promise<void> {
@@ -22,6 +23,32 @@ export default class TocGenerator {
     await this.runSectionIndex();
     if (this.isUnloaded()) return;
     await this.removeOrphanedIndexFiles();
+  }
+
+  async runForPaths(filePaths: ReadonlyArray<string>): Promise<void> {
+    for (const filePath of filePaths) {
+      if (this.isUnloaded()) return;
+      const file = this.app.vault.getAbstractFileByPath(filePath);
+      if (!(file instanceof TFile)) continue;
+      if (this.shouldSkipFile(file.path) || this.isKbManaged(file)) continue;
+      await this.updatePerNoteToc(file);
+    }
+    if (this.isUnloaded()) return;
+    for (const folderPath of this.affectedFolders(filePaths)) {
+      if (this.isUnloaded()) return;
+      await this.syncSectionIndex(folderPath);
+    }
+  }
+
+  private affectedFolders(filePaths: ReadonlyArray<string>): string[] {
+    const folders = new Set<string>();
+    for (const filePath of filePaths) folders.add(this.folderPathFromPath(filePath));
+    return [...folders].sort();
+  }
+
+  private folderPathFromPath(filePath: string): string {
+    const lastSlash = filePath.lastIndexOf('/');
+    return lastSlash === -1 ? '' : filePath.slice(0, lastSlash);
   }
 
   /**
@@ -43,6 +70,7 @@ export default class TocGenerator {
       const hasNotes = indexed && this.getIndexNotes(folderPath).length > 0;
       if (indexed && !excluded && hasNotes) continue;
       try {
+        this.onSelfModify(file.path);
         await this.app.vault.trash(file, true);
       } catch (err) {
         console.warn(`KB Manager: failed to trash orphan INDEX ${file.path}`, err);
@@ -69,21 +97,49 @@ export default class TocGenerator {
       const file = this.app.vault.getAbstractFileByPath(record.path);
       if (!(file instanceof TFile)) continue;
       if (this.shouldSkipFile(file.path) || this.isKbManaged(file)) continue;
-      const body = buildPerNoteTocBody(file.path, this.index.getHeadings(file.path));
-      await this.app.vault.process(file, content => {
-        if (!isWriteSafe(content, 'toc')) return content;
-        return replaceDelimitedSection(content, 'toc', body);
-      });
+      await this.updatePerNoteToc(file);
     }
   }
 
   async runSectionIndex(): Promise<void> {
     for (const folderPath of this.index.getAllFolders()) {
       if (this.isUnloaded()) return;
-      if (isExcluded(folderPath, this.settings.excludedPaths)) continue;
-      const notes = this.getIndexNotes(folderPath);
-      if (notes.length === 0) continue;
-      await this.writeIndex(folderPath, buildIndexFile({ folderPath, notes }));
+      await this.syncSectionIndex(folderPath);
+    }
+  }
+
+  private async updatePerNoteToc(file: TFile): Promise<void> {
+    const body = buildPerNoteTocBody(file.path, this.index.getHeadings(file.path));
+    await this.app.vault.process(file, content => {
+      if (!isWriteSafe(content, 'toc')) return content;
+      const next = replaceDelimitedSection(content, 'toc', body);
+      if (next !== content) this.onSelfModify(file.path);
+      return next;
+    });
+  }
+
+  private async syncSectionIndex(folderPath: string): Promise<void> {
+    if (isExcluded(folderPath, this.settings.excludedPaths)) {
+      await this.removeIndexForFolder(folderPath);
+      return;
+    }
+    const notes = this.getIndexNotes(folderPath);
+    if (notes.length === 0) {
+      await this.removeIndexForFolder(folderPath);
+      return;
+    }
+    await this.writeIndex(folderPath, buildIndexFile({ folderPath, notes }));
+  }
+
+  private async removeIndexForFolder(folderPath: string): Promise<void> {
+    const path = this.indexPathForFolder(folderPath);
+    const existing = this.app.vault.getAbstractFileByPath(path);
+    if (!(existing instanceof TFile) || !this.isManagedIndex(existing)) return;
+    try {
+      this.onSelfModify(existing.path);
+      await this.app.vault.trash(existing, true);
+    } catch (err) {
+      console.warn(`KB Manager: failed to trash stale INDEX ${existing.path}`, err);
     }
   }
 
@@ -97,17 +153,25 @@ export default class TocGenerator {
   }
 
   private async writeIndex(folderPath: string, content: string): Promise<void> {
-    const path = normalizePath(folderPath === '' ? INDEX_BASENAME : `${folderPath}/${INDEX_BASENAME}`);
+    const path = this.indexPathForFolder(folderPath);
     const existing = this.app.vault.getAbstractFileByPath(path);
     if (existing instanceof TFile) {
       if (!this.isKbManaged(existing)) {
         console.warn(`KB Manager: skipping ${path} - file lacks kb-managed frontmatter`);
         return;
       }
+      const current = await this.app.vault.cachedRead(existing);
+      if (current === content) return;
+      this.onSelfModify(existing.path);
       await this.app.vault.process(existing, () => content);
       return;
     }
+    this.onSelfModify(path);
     await this.app.vault.create(path, content);
+  }
+
+  private indexPathForFolder(folderPath: string): string {
+    return normalizePath(folderPath === '' ? INDEX_BASENAME : `${folderPath}/${INDEX_BASENAME}`);
   }
 
   private shouldSkipFile(filePath: string): boolean {

@@ -6,6 +6,7 @@ import {
   countFilesInFolderScope,
   countPathsInFolderScope,
   FileEntry,
+  filterUserFiles,
   isFileInFolderScope,
 } from './sidebar-data';
 import { TagNode } from './vault-index-types';
@@ -122,5 +123,17 @@ describe('scope counts', () => {
     ];
     expect(countFilesInFolderScope(files, 'notes')).toBe(1);
     expect(countPathsInFolderScope(['notes/a.md', 'archive/b.md'], 'notes')).toBe(1);
+  });
+});
+
+describe('filterUserFiles', () => {
+  it('excludes KB-managed generated notes from dashboard aggregates', () => {
+    const files = [
+      { path: 'Projects/A.md', tags: [], headings: [], folderPath: 'Projects' },
+      { path: 'Projects/MOC.md', tags: [], headings: [], folderPath: 'Projects', kbManaged: true },
+      { path: 'Projects/INDEX.md', tags: [], headings: [], folderPath: 'Projects', kbManaged: true },
+    ];
+
+    expect(filterUserFiles(files).map(file => file.path)).toEqual(['Projects/A.md']);
   });
 });

@@ -14,6 +14,7 @@ export interface KBManagerSettings {
   defaultMocFormat: 'dedicated' | 'inline';
   folderRules: Record<string, 'dedicated' | 'inline'>;
   tagRules: TagRule[];
+  ignoredTagCleanupCandidates: string[];
   rebuildRibbonIconIndex: number | null;
   sidebarRibbonIconIndex: number | null;
 }
@@ -29,6 +30,7 @@ export const DEFAULT_SETTINGS: KBManagerSettings = {
   defaultMocFormat: 'dedicated',
   folderRules: {},
   tagRules: [],
+  ignoredTagCleanupCandidates: [],
   rebuildRibbonIconIndex: null,
   sidebarRibbonIconIndex: null,
 };
@@ -58,6 +60,7 @@ export class KBSettingsTab extends PluginSettingTab {
     this.buildGeneralSection(containerEl);
     this.buildExclusionsSection(containerEl);
     this.buildMocFormatSection(containerEl);
+    this.buildTagCleanupSection(containerEl);
     this.buildTagRulesSection(containerEl);
   }
 
@@ -251,6 +254,25 @@ export class KBSettingsTab extends PluginSettingTab {
               }
             } catch (err) { console.error('KB Manager: failed to save settings', err); }
           })
+      );
+  }
+
+  private buildTagCleanupSection(containerEl: HTMLElement): void {
+    containerEl.createEl('h3', { text: 'Tag Cleanup' });
+    const ignoredCount = this.plugin.settings.ignoredTagCleanupCandidates.length;
+
+    new Setting(containerEl)
+      .setName('Ignored suggestions')
+      .setDesc(`${ignoredCount} ignored cleanup suggestion${ignoredCount === 1 ? '' : 's'}.`)
+      .addButton(btn =>
+        btn
+          .setButtonText('Clear ignored')
+          .setDisabled(ignoredCount === 0)
+          .onClick(async () => {
+            this.plugin.settings.ignoredTagCleanupCandidates = [];
+            await this.plugin.saveSettings();
+            this.display();
+          }),
       );
   }
 
