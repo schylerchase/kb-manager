@@ -1,5 +1,9 @@
 import { describe, expect, it } from 'vitest';
-import { getRibbonIconIndex, restoreRibbonIconIndex } from './ribbon-order';
+import {
+  getRibbonIconIndex,
+  restoreRibbonIconIndex,
+  shouldManageRibbonIconIndex,
+} from './ribbon-order';
 
 describe('ribbon-order', () => {
   it('moves a ribbon icon back to its saved position', () => {
@@ -25,6 +29,11 @@ describe('ribbon-order', () => {
 
     expect(parent.children).toEqual([other, sidebar]);
     expect(getRibbonIconIndex(sidebar as never)).toBe(1);
+  });
+
+  it('leaves mobile ribbon placement to Obsidian', () => {
+    expect(shouldManageRibbonIconIndex(true)).toBe(false);
+    expect(shouldManageRibbonIconIndex(false)).toBe(true);
   });
 });
 

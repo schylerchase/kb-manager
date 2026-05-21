@@ -1,4 +1,5 @@
 import { Editor, MarkdownView, Notice, Plugin, TFile } from 'obsidian';
+import { Platform } from 'obsidian';
 import { KBManagerSettings, DEFAULT_SETTINGS, KBSettingsTab } from 'settings';
 import KBSidebarView, { KB_SIDEBAR_VIEW_TYPE } from './KBSidebarView';
 import KBReminder from './KBReminder';
@@ -30,7 +31,7 @@ import { frontmatterToInlineForActiveFile, inlineToFrontmatterForActiveFile } fr
 import { evaluateRules } from './lib/tag-rules';
 import { applyCleansePlan, buildCleansePlan } from './commands/cleanse-tags';
 import { CleanseTagsModal } from './commands/cleanse-tags-modal';
-import { getRibbonIconIndex, restoreRibbonIconIndex } from './lib/ribbon-order';
+import { getRibbonIconIndex, restoreRibbonIconIndex, shouldManageRibbonIconIndex } from './lib/ribbon-order';
 
 const STATUS_IDLE = 'KB: idle';
 const STATUS_PREVIEW = 'KB: preview';
@@ -155,6 +156,7 @@ export default class KBManagerPlugin extends Plugin {
     ribbonIcon: HTMLElement,
     getSavedIndex: () => number | null | undefined,
   ): void {
+    if (!shouldManageRibbonIconIndex(Platform.isMobileApp)) return;
     const restore = () => restoreRibbonIconIndex(ribbonIcon, getSavedIndex());
     restore();
     window.setTimeout(restore, 250);
@@ -167,6 +169,7 @@ export default class KBManagerPlugin extends Plugin {
     getSavedIndex: () => number | null | undefined,
     saveIndex: (index: number) => Promise<void>,
   ): void {
+    if (!shouldManageRibbonIconIndex(Platform.isMobileApp)) return;
     let canSave = false;
     let lastSaved = getSavedIndex();
     const scheduleSave = () => {

@@ -2,6 +2,7 @@ node_modules/
 dist/
 .planning/
 .tmp-tests/
+ui-qa/test-results/
 docs/
 main.js
 *.js.map

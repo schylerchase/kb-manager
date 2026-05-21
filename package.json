@@ -8,7 +8,9 @@
     "build": "tsc --noEmit --skipLibCheck && node esbuild.config.mjs production",
     "package:installer": "npm run build && node scripts/package-installer.mjs",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "ui-qa": "playwright test --config ui-qa/playwright.config.ts",
+    "ui-qa:update": "playwright test --config ui-qa/playwright.config.ts --update-snapshots"
   },
   "keywords": [
     "obsidian",
@@ -29,6 +31,8 @@
   },
   "homepage": "https://github.com/schylerchase/kb-manager#readme",
   "devDependencies": {
+    "@axe-core/playwright": "^4.11.3",
+    "@playwright/test": "^1.60.0",
     "@types/node": "^22.0.0",
     "builtin-modules": "^3.3.0",
     "esbuild": "^0.28.0",
